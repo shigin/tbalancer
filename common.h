@@ -7,6 +7,8 @@
 #define MAX_MSG 250
 #define tb_error tb_debug
 
+#define tb_alloc(__s_t) (__s_t *)malloc(sizeof(__s_t))
+
 static void tb_debug(const char *message, ...)
 {
     va_list ap;

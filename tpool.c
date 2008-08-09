@@ -14,7 +14,7 @@
 
 struct tpool *make_pool(void)
 {
-    struct tpool *result = (struct tpool *)malloc(sizeof(struct tpool));
+    struct tpool *result = tb_alloc(struct tpool);
     bzero(result, sizeof(struct tpool));
     return result;
 }
@@ -56,7 +56,7 @@ struct tconnection *make_connection(struct pool_server *server, int nonblock)
             return NULL;
         }
     }
-    result = (struct tconnection *)malloc(sizeof(struct tconnection));
+    result = tb_alloc(struct tconnection);
     result->sock = sock;
     result->parent = server;
     result->stat = connected;
@@ -70,12 +70,12 @@ void server_timeout(struct pool_server *server, int which, long msec)
     {
         case TB_CONN_TO:
             if (server->c_to == 0)
-                server->c_to = (struct timeval *)malloc(sizeof(struct timeval));
+                server->c_to = tb_alloc(struct timeval);
             change = server->c_to;
             break;
         case TB_WRITE_TO:
             if (server->w_to == 0)
-                server->w_to = (struct timeval *)malloc(sizeof(struct timeval));
+                server->w_to = tb_alloc(struct timeval);
             change = server->w_to;
             break;
         default:
@@ -105,7 +105,7 @@ struct pool_server *add_server(struct tpool *pool, const char *name, uint16_t po
     hints.ai_flags = AI_PASSIVE | AI_ADDRCONFIG;
     sprintf(sport, "%d", port);
 
-    server = (struct pool_server*)malloc(sizeof(struct pool_server));
+    server = tb_alloc(struct pool_server);
     bzero(server, sizeof(server));
     server->sname = strdup(name);
     server->check_after.tv_sec = 2;
@@ -126,7 +126,7 @@ struct pool_server *add_server(struct tpool *pool, const char *name, uint16_t po
     }
     if (connection == 0)
     {
-        server->ev = (struct event *)malloc(sizeof(struct event));
+        server->ev = tb_alloc(struct event);
         tb_debug("make a callback for server %s", server->sname);
         evtimer_set(server->ev, check_server, server);
         event_add(server->ev, &server->check_after);

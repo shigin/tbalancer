@@ -28,10 +28,10 @@ struct thrift_client *thrift_client_ctor(struct tpool *pool, const int origin)
     struct thrift_client *result;
     int flags = fcntl(origin, F_GETFL, 0);
     fcntl(origin, F_SETFL, flags | O_NONBLOCK);
-    result = (struct thrift_client*)malloc(sizeof(struct thrift_client));
+    result = tb_alloc(struct thrift_client);
     result->origin = origin;
     result->pool = pool;
-    result->ev = (struct event*)malloc(sizeof(struct event));
+    result->ev = tb_alloc(struct event);
     result->buf_size = 0;
     result->transmited = 0;
     result->buffer = NULL;
