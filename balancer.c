@@ -4,10 +4,12 @@
 #include <arpa/inet.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
 #include <event.h>
 #include "tpool.h"
+#include "common.h"
 
 struct thrift_client {
     struct event *ev;
@@ -23,6 +25,8 @@ struct thrift_client {
 struct thrift_client *thrift_client_ctor(struct tpool *pool, const int origin)
 {
     struct thrift_client *result;
+    int flags = fcntl(origin, F_GETFL, 0);
+    fcntl(origin, F_SETFL, flags | O_NONBLOCK);
     result = (struct thrift_client*)malloc(sizeof(struct thrift_client));
     result->origin = origin;
     result->pool = pool;
@@ -49,7 +53,7 @@ void write_data(int fd, short event, void *arg)
     struct thrift_client *tclient = arg;
     ssize_t wrote = write(fd, tclient->buffer + tclient->transmited, 
                             tclient->buf_size - tclient->transmited);
-    printf("write_data\n");
+    tb_debug("write_data [%d]", fd);
     if (wrote > 0)
     {
         tclient->transmited += wrote;
@@ -71,23 +75,23 @@ void read_data(int fd, short event, void *arg)
     struct thrift_client *tclient = arg;
     ssize_t got = read(fd, tclient->buffer + tclient->transmited, 
                            tclient->buf_size - tclient->transmited);
-    printf("read_data\n");
+    tb_debug("read_data [%d]", fd);
     if (got > 0)
     {
         tclient->transmited += got;
         if (tclient->transmited == tclient->expect)
         {
-            printf("data ok\n");
+            tb_debug("data ok");
             tclient->transmited = 0;
             if (tclient->connection)
             {
-                printf("switch to origin\n");
+                tb_debug("switch to origin");
                 add_connection(tclient->pool, tclient->connection);
                 tclient->connection = NULL;
                 event_set(tclient->ev, tclient->origin, 
                         EV_WRITE, write_data, tclient);
             } else {
-                printf("switch to pooled\n");
+                tb_debug("switch to pooled");
                 tclient->connection = get_connection(tclient->pool);
                 event_set(tclient->ev, tclient->connection->sock, 
                         EV_WRITE, write_data, tclient);
@@ -108,7 +112,7 @@ void read_len(int fd, short event, void *arg)
     struct thrift_client *tclient = arg;
     ssize_t got;
     uint32_t len;
-    fprintf(stderr, "read_len\n");
+    tb_debug("read_len [%d]", fd);
     got = read(fd, &len, sizeof(len));
     if (got == 4)
     {
@@ -127,7 +131,11 @@ void read_len(int fd, short event, void *arg)
         event_add(tclient->ev, NULL);
     } else {
         /* XXX check if read 1..3 bytes */
-        perror("read_len");
+        if (got != 0) {
+            perror("read_len");
+        } else {
+            tb_debug("close connection %d", fd);
+        }
         close(fd);
         thrift_client_dtor(tclient);
     }
@@ -146,11 +154,12 @@ void accept_client(int fd, short event, void *arg)
     socklen_t len = sizeof(addr);
     /* reshedule me */
     event_add(&pair->ev, NULL);
-    printf("accept\n");
+    tb_debug("accept [%d]", fd);
     client = accept(fd, &addr, &len);
     if (client != -1)
     {
         struct thrift_client *tclient = thrift_client_ctor(pair->pool, client);
+        tb_debug("new client %d", client);
         event_set(tclient->ev, client, EV_READ, read_len, tclient);
         event_add(tclient->ev, NULL);
     } else {

@@ -2,11 +2,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
 
 #include "tpool.h"
+#include "common.h"
 
 struct tpool *make_pool(void)
 {
@@ -21,11 +23,14 @@ struct tconnection *make_connection(struct pool_server *server)
     struct tconnection *result;
     int sock, ret;
     sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    tb_debug("connection with a sock %d", sock);
     if (sock == -1)
         return NULL;
     ret = connect(sock, res->ai_addr, res->ai_addrlen);
     if (ret != -1)
     {
+        /*int flags = fcntl(sock, F_GETFL, 0);
+        fcntl(sock, F_SETFL, flags | O_NONBLOCK);*/
         result = (struct tconnection *)malloc(sizeof(struct tconnection));
         result->sock = sock;
         result->parent = server;
@@ -94,6 +99,7 @@ struct tconnection *get_connection(struct tpool *pool)
     {
         pool->free = pool->free->next;
     } else {
+        tb_debug("new connection");
         if (pool->use_next == 0)
             pool->use_next = pool->servers;
         return make_connection(pool->use_next);
