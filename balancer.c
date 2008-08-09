@@ -71,6 +71,39 @@ void write_data(int fd, short event, void *arg)
     tb_debug("<- write_data [%d]", fd);
 }
 
+void pool_connect(int fd, short event, void *arg)
+{
+    struct thrift_client *tclient = arg;
+    int ret;
+    socklen_t rlen = sizeof(ret);
+    tb_debug("-> pool_connect [%d]", fd);
+    if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &ret, &rlen) != -1)
+    {
+        if (ret == 0) {
+            tclient->connection->stat = CONN_CONNECTED;
+            event_set(tclient->ev, fd, EV_WRITE, write_data, tclient);
+            event_add(tclient->ev, NULL);
+            tb_debug("<- pool_connect [%d]", fd);
+            return;
+        }
+    } else {
+        perror("pool_connect");
+    }
+    /* XXX make pool now about broken connect */
+    free_connection(tclient->connection);
+    /* get rid of a copy-paste */
+    tclient->connection = get_connection(tclient->pool);
+    ret = tclient->connection->stat;
+    if (ret == CONN_CONNECTED)
+    {
+        event_set(tclient->ev, fd, EV_WRITE, write_data, tclient);
+    } else {
+        event_set(tclient->ev, fd, EV_WRITE, pool_connect, tclient);
+    }
+    event_add(tclient->ev, NULL);
+    tb_debug("<- pool_connect [%d]", fd);
+}
+
 void read_data(int fd, short event, void *arg)
 {
     struct thrift_client *tclient = arg;
@@ -92,10 +125,18 @@ void read_data(int fd, short event, void *arg)
                 event_set(tclient->ev, tclient->origin, 
                         EV_WRITE, write_data, tclient);
             } else {
-                tb_debug("switch to pooled");
                 tclient->connection = get_connection(tclient->pool);
-                event_set(tclient->ev, tclient->connection->sock, 
-                        EV_WRITE, write_data, tclient);
+                tb_debug("switch to pooled %d [stat %d]", 
+                    tclient->connection->sock, tclient->connection->stat);
+                if (tclient->connection->stat == CONN_CONNECTED)
+                {
+                    event_set(tclient->ev, tclient->connection->sock, 
+                            EV_WRITE, write_data, tclient);
+                } else {
+                    tb_debug("wait to connect for %d", tclient->connection->sock);
+                    event_set(tclient->ev, tclient->connection->sock, 
+                            EV_WRITE, pool_connect, tclient);
+                }
             }
         } else {
             event_set(tclient->ev, fd, EV_READ, read_data, tclient);
