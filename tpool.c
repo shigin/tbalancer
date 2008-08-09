@@ -29,8 +29,8 @@ struct tconnection *make_connection(struct pool_server *server)
     ret = connect(sock, res->ai_addr, res->ai_addrlen);
     if (ret != -1)
     {
-        /*int flags = fcntl(sock, F_GETFL, 0);
-        fcntl(sock, F_SETFL, flags | O_NONBLOCK);*/
+        int flags = fcntl(sock, F_GETFL, 0);
+        fcntl(sock, F_SETFL, flags | O_NONBLOCK);
         result = (struct tconnection *)malloc(sizeof(struct tconnection));
         result->sock = sock;
         result->parent = server;

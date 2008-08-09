@@ -53,7 +53,7 @@ void write_data(int fd, short event, void *arg)
     struct thrift_client *tclient = arg;
     ssize_t wrote = write(fd, tclient->buffer + tclient->transmited, 
                             tclient->buf_size - tclient->transmited);
-    tb_debug("write_data [%d]", fd);
+    tb_debug("-> write_data [%d]", fd);
     if (wrote > 0)
     {
         tclient->transmited += wrote;
@@ -68,6 +68,7 @@ void write_data(int fd, short event, void *arg)
         perror("write_data");
         thrift_client_dtor(tclient);
     }
+    tb_debug("<- write_data [%d]", fd);
 }
 
 void read_data(int fd, short event, void *arg)
@@ -112,7 +113,7 @@ void read_len(int fd, short event, void *arg)
     struct thrift_client *tclient = arg;
     ssize_t got;
     uint32_t len;
-    tb_debug("read_len [%d]", fd);
+    tb_debug("-> read_len [%d]", fd);
     got = read(fd, &len, sizeof(len));
     if (got == 4)
     {
@@ -139,6 +140,7 @@ void read_len(int fd, short event, void *arg)
         close(fd);
         thrift_client_dtor(tclient);
     }
+    tb_debug("<- read_len [%d]", fd);
 }
 
 struct event_pair {
