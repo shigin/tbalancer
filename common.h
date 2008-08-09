@@ -5,6 +5,7 @@
 #include <time.h>
 
 #define MAX_MSG 250
+#define tb_error tb_debug
 
 static void tb_debug(const char *message, ...)
 {

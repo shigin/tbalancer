@@ -5,3 +5,6 @@ balancer: balancer.o tpool.o
 
 .c.o:
 	gcc -g -Wall -c $< 
+
+balancer.o: tpool.h
+tpool.o: tpool.h

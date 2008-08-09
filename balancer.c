@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <event.h>
+#include <assert.h>
 #include "tpool.h"
 #include "common.h"
 
@@ -107,6 +108,7 @@ void pool_connect(int fd, short event, void *arg)
 void read_data(int fd, short event, void *arg)
 {
     struct thrift_client *tclient = arg;
+    struct timeval *to = NULL;
     ssize_t got = read(fd, tclient->buffer + tclient->transmited, 
                            tclient->buf_size - tclient->transmited);
     tb_debug("read_data [%d]", fd);
@@ -132,16 +134,18 @@ void read_data(int fd, short event, void *arg)
                 {
                     event_set(tclient->ev, tclient->connection->sock, 
                             EV_WRITE, write_data, tclient);
+                    to = &tclient->connection->w_to;
                 } else {
                     tb_debug("wait to connect for %d", tclient->connection->sock);
                     event_set(tclient->ev, tclient->connection->sock, 
                             EV_WRITE, pool_connect, tclient);
+                    to = &tclient->connection->w_to;
                 }
             }
         } else {
             event_set(tclient->ev, fd, EV_READ, read_data, tclient);
         }
-        event_add(tclient->ev, NULL);
+        event_add(tclient->ev, to);
     } else {
         /* XXX fill it */
         perror("read_data");
@@ -214,6 +218,7 @@ int main()
 {
     struct sockaddr_in listen_on;
     struct event_pair epair;
+    struct pool_server* server;
     int ls = socket(PF_INET, SOCK_STREAM, 0);
     int one = 1;
     if (ls == -1)
@@ -239,9 +244,12 @@ int main()
         perror("bind");
         return 1;
     }
-    epair.pool = make_pool();
-    add_server(epair.pool, "localhost", 9091);
     event_init();
+    epair.pool = make_pool();
+    server = add_server(epair.pool, "localhost", 9091);
+    assert(server);
+    server_timeout(server, TB_CONN_TO, 3);
+    server_timeout(server, TB_WRITE_TO, 3);
     event_set(&epair.ev, ls, EV_READ, accept_client, &epair);
     event_add(&epair.ev, NULL);
     event_dispatch();

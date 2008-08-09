@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <errno.h>
+#include <string.h>
 
 #include "tpool.h"
 #include "common.h"
@@ -50,6 +51,7 @@ struct tconnection *make_connection(struct pool_server *server, int nonblock)
     } else {
         if (!(nonblock && errno == EINPROGRESS))
         {
+            tb_debug("can't connect (%d)");
             close(sock);
             return NULL;
         }
@@ -61,7 +63,36 @@ struct tconnection *make_connection(struct pool_server *server, int nonblock)
     return result;
 }
 
-int add_server(struct tpool *pool, const char *name, uint16_t port)
+void server_timeout(struct pool_server *server, int which, long msec)
+{
+    struct timeval *change;
+    switch (which)
+    {
+        case TB_CONN_TO:
+            if (server->c_to == 0)
+                server->c_to = (struct timeval *)malloc(sizeof(struct timeval));
+            change = server->c_to;
+            break;
+        case TB_WRITE_TO:
+            if (server->w_to == 0)
+                server->w_to = (struct timeval *)malloc(sizeof(struct timeval));
+            change = server->w_to;
+            break;
+        default:
+            tb_error("pool_server doesn't support %d timeout");
+            return;
+    }
+    change->tv_sec = msec/1000;
+    change->tv_usec = msec%1000;
+}
+
+void check_server(int _, short event, void *arg)
+{
+    struct pool_server *server = (struct pool_server *)arg;
+    tb_debug("check after %s (%ld)", server->sname, server->check_after.tv_sec);
+}
+
+struct pool_server *add_server(struct tpool *pool, const char *name, uint16_t port)
 {
     struct pool_server *server;
     struct tconnection *connection;
@@ -75,6 +106,11 @@ int add_server(struct tpool *pool, const char *name, uint16_t port)
     sprintf(sport, "%d", port);
 
     server = (struct pool_server*)malloc(sizeof(struct pool_server));
+    bzero(server, sizeof(server));
+    server->sname = strdup(name);
+    server->check_after.tv_sec = 2;
+    server->c_to = NULL;
+    server->w_to = NULL;
     error = getaddrinfo(name, sport, &hints, &res0);
     server->res0 = res0;
     for (res = res0; res; res = res->ai_next)
@@ -89,7 +125,12 @@ int add_server(struct tpool *pool, const char *name, uint16_t port)
         free(connection);
     }
     if (connection == 0)
-        return -1;
+    {
+        server->ev = (struct event *)malloc(sizeof(struct event));
+        tb_debug("make a callback for server %s", server->sname);
+        evtimer_set(server->ev, check_server, server);
+        event_add(server->ev, &server->check_after);
+    }
     if (server->next)
     {
         server->next = pool->use_next->next;
@@ -98,7 +139,7 @@ int add_server(struct tpool *pool, const char *name, uint16_t port)
         pool->use_next = server;
         pool->servers = server;
     }
-    return 0;
+    return server;
 }
 
 int add_connection(struct tpool *pool, struct tconnection *server)
