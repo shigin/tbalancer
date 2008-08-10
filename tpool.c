@@ -86,17 +86,76 @@ void server_timeout(struct pool_server *server, int which, long msec)
     change->tv_usec = msec%1000;
 }
 
+struct connect_tuple
+{
+    struct pool_server *server;
+    struct tconnection *connection;
+    struct tpool *pool;
+    struct event *ev;
+};
+
+void check_server(int _, short event, void *arg);
+void async_connection(int fd, short event, void *arg)
+{
+    struct connect_tuple *tuple = (struct connect_tuple *)arg;
+    int ret;
+    socklen_t rlen = sizeof(ret);
+    tb_debug("-> async_connection [%d]", fd);
+    if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &ret, &rlen) != -1)
+    {
+        if (ret == 0) {
+            tuple->connection->stat = CONN_CONNECTED;
+            add_connection(tuple->pool, tuple->connection);
+            tb_debug("<- async_connection ok [%d]", fd);
+            return;
+        }
+    } else {
+        perror("pool_connect");
+    }
+    tb_debug("<- async_connection failed (%d)", ret);
+    free_connection(tuple->connection);
+    tuple->connection = NULL;
+    evtimer_set(tuple->ev, check_server, tuple);
+    event_add(tuple->ev, &tuple->server->check_after);
+}
+
 void check_server(int _, short event, void *arg)
 {
-    struct pool_server *server = (struct pool_server *)arg;
-    tb_debug("check after %s (%ld)", server->sname, server->check_after.tv_sec);
+    struct connect_tuple *tuple = (struct connect_tuple *)arg;
+    struct addrinfo *res=NULL;
+    tb_debug("-> check_server %s after %ld sec", tuple->server->sname, 
+            tuple->server->check_after.tv_sec);
+    
+    for (res = tuple->server->res0; res; res = res->ai_next)
+    {
+        tuple->server->res = res;
+        tuple->connection = make_connection(tuple->server, 1);
+        if (tuple->connection != 0)
+        {
+            if (tuple->connection->stat == CONN_CONNECTED)
+            {
+                tb_debug("<- check_server %s: connected", tuple->server->sname);
+                add_connection(tuple->pool, tuple->connection);
+                return;
+            }
+            tb_debug("<- check_server %s: async_connect", tuple->server->sname);
+            event_set(tuple->ev, tuple->connection->sock, EV_WRITE,
+                    async_connection, tuple);
+            event_add(tuple->ev, &tuple->server->check_after);
+            return;
+        }
+        free(tuple->connection);
+    }
+    tb_debug("<- check_server %s: sheduled", tuple->server->sname);
+    evtimer_set(tuple->ev, check_server, tuple);
+    event_add(tuple->ev, &tuple->server->check_after);
 }
 
 struct pool_server *add_server(struct tpool *pool, const char *name, uint16_t port)
 {
     struct pool_server *server;
     struct tconnection *connection;
-    struct addrinfo hints, *res=NULL, *res0=NULL;
+    struct addrinfo hints, *res=NULL;
     char sport[sizeof("65536")];
     int error;
     bzero(&hints, sizeof(hints));
@@ -111,9 +170,8 @@ struct pool_server *add_server(struct tpool *pool, const char *name, uint16_t po
     server->check_after.tv_sec = 2;
     server->c_to = NULL;
     server->w_to = NULL;
-    error = getaddrinfo(name, sport, &hints, &res0);
-    server->res0 = res0;
-    for (res = res0; res; res = res->ai_next)
+    error = getaddrinfo(name, sport, &hints, &server->res0);
+    for (res = server->res0; res; res = res->ai_next)
     {
         server->res = res;
         connection = make_connection(server, 0);
@@ -126,11 +184,17 @@ struct pool_server *add_server(struct tpool *pool, const char *name, uint16_t po
     }
     if (connection == 0)
     {
-        server->ev = tb_alloc(struct event);
+        struct connect_tuple *arg = tb_alloc(struct connect_tuple);
+        arg->server = server;
+        arg->connection = NULL;
+        arg->pool = pool;
+        arg->ev = tb_alloc(struct event);
         tb_debug("make a callback for server %s", server->sname);
-        evtimer_set(server->ev, check_server, server);
-        event_add(server->ev, &server->check_after);
+        evtimer_set(arg->ev, check_server, arg);
+        event_add(arg->ev, &server->check_after);
+        return server;
     }
+    server->res = res;
     if (server->next)
     {
         server->next = pool->use_next->next;

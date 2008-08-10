@@ -14,7 +14,6 @@ struct pool_server
 {
     char *sname;
     uint16_t port;
-    struct event *ev;
     struct pool_server *next;
     struct addrinfo *res0, *res;
     struct timeval *c_to, *w_to, check_after;
