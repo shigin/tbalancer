@@ -14,16 +14,16 @@
 
 struct thrift_client {
     struct event *ev;
-    struct tpool *pool;
+    struct tb_pool *pool;
     int origin;          /* original fd of client */
-    struct tconnection *connection;   /* */
+    struct tb_connection *connection;   /* */
     uint32_t transmited; /* how many bytes we are recieved or transmited */
     uint32_t expect;     /* bytes to read/write */
     size_t buf_size;
     void *buffer;        /* buffer with data */
 };
 
-struct thrift_client *thrift_client_ctor(struct tpool *pool, const int origin)
+struct thrift_client *thrift_client_ctor(struct tb_pool *pool, const int origin)
 {
     struct thrift_client *result;
     int flags = fcntl(origin, F_GETFL, 0);
@@ -91,7 +91,7 @@ void pool_connect(int fd, short event, void *arg)
         perror("pool_connect");
     }
     /* XXX make pool now about broken connect */
-    free_connection(tclient->connection);
+    dead_connection(tclient->pool, tclient->connection);
     /* get rid of a copy-paste */
     tclient->connection = get_connection(tclient->pool);
     ret = tclient->connection->stat;
@@ -189,7 +189,7 @@ void read_len(int fd, short event, void *arg)
 }
 
 struct event_pair {
-    struct tpool *pool;
+    struct tb_pool *pool;
     struct event ev;
 };
 
@@ -218,7 +218,7 @@ int main()
 {
     struct sockaddr_in listen_on;
     struct event_pair epair;
-    struct pool_server* server;
+    struct tb_server* server;
     int ls = socket(PF_INET, SOCK_STREAM, 0);
     int one = 1;
     if (ls == -1)

@@ -12,26 +12,31 @@
 #include "tpool.h"
 #include "common.h"
 
-struct tpool *make_pool(void)
+struct tb_pool *make_pool(void)
 {
-    struct tpool *result = tb_alloc(struct tpool);
-    bzero(result, sizeof(struct tpool));
+    struct tb_pool *result = tb_alloc(struct tb_pool);
+    bzero(result, sizeof(struct tb_pool));
     return result;
 }
 
-void free_connection(struct tconnection *conn)
+void free_connection(struct tb_connection *conn)
 {
     close(conn->sock);
     free(conn);
 }
 
-struct tconnection *make_connection(struct pool_server *server, int nonblock)
+void dead_connection(struct tb_pool *pool, struct tb_connection *conn)
+{
+    free_connection(conn);
+}
+
+struct tb_connection *make_connection(struct tb_server *server, int nonblock)
 {
     struct addrinfo *res = server->res;
-    struct tconnection *result;
+    struct tb_connection *result;
     int sock, ret, connected=CONN_CREATED;
     sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-    tb_debug("connection with a sock %d", sock);
+    tb_debug("-> make_connection: socket %d", sock);
     if (sock == -1)
         return NULL;
     if (nonblock)
@@ -51,19 +56,21 @@ struct tconnection *make_connection(struct pool_server *server, int nonblock)
     } else {
         if (!(nonblock && errno == EINPROGRESS))
         {
-            tb_debug("can't connect (%d)");
+            tb_debug("<- make_connection: can't connect %d (errno %d)",
+                sock, errno);
             close(sock);
             return NULL;
         }
     }
-    result = tb_alloc(struct tconnection);
+    result = tb_alloc(struct tb_connection);
     result->sock = sock;
     result->parent = server;
     result->stat = connected;
+    tb_debug("<- make_connection: done %d", sock);
     return result;
 }
 
-void server_timeout(struct pool_server *server, int which, long msec)
+void server_timeout(struct tb_server *server, int which, long msec)
 {
     struct timeval *change;
     switch (which)
@@ -79,7 +86,7 @@ void server_timeout(struct pool_server *server, int which, long msec)
             change = server->w_to;
             break;
         default:
-            tb_error("pool_server doesn't support %d timeout");
+            tb_error("tb_server doesn't support %d timeout");
             return;
     }
     change->tv_sec = msec/1000;
@@ -88,9 +95,9 @@ void server_timeout(struct pool_server *server, int which, long msec)
 
 struct connect_tuple
 {
-    struct pool_server *server;
-    struct tconnection *connection;
-    struct tpool *pool;
+    struct tb_server *server;
+    struct tb_connection *connection;
+    struct tb_pool *pool;
     struct event *ev;
 };
 
@@ -151,10 +158,10 @@ void check_server(int _, short event, void *arg)
     event_add(tuple->ev, &tuple->server->check_after);
 }
 
-struct pool_server *add_server(struct tpool *pool, const char *name, uint16_t port)
+struct tb_server *add_server(struct tb_pool *pool, const char *name, uint16_t port)
 {
-    struct pool_server *server;
-    struct tconnection *connection;
+    struct tb_server *server;
+    struct tb_connection *connection;
     struct addrinfo hints, *res=NULL;
     char sport[sizeof("65536")];
     int error;
@@ -164,7 +171,7 @@ struct pool_server *add_server(struct tpool *pool, const char *name, uint16_t po
     hints.ai_flags = AI_PASSIVE | AI_ADDRCONFIG;
     sprintf(sport, "%d", port);
 
-    server = tb_alloc(struct pool_server);
+    server = tb_alloc(struct tb_server);
     bzero(server, sizeof(server));
     server->sname = strdup(name);
     server->check_after.tv_sec = 2;
@@ -206,7 +213,7 @@ struct pool_server *add_server(struct tpool *pool, const char *name, uint16_t po
     return server;
 }
 
-int add_connection(struct tpool *pool, struct tconnection *server)
+int add_connection(struct tb_pool *pool, struct tb_connection *server)
 {
     if (pool->last)
         pool->last->next = server;
@@ -217,9 +224,9 @@ int add_connection(struct tpool *pool, struct tconnection *server)
     return -1;
 }
 
-struct tconnection *get_connection(struct tpool *pool)
+struct tb_connection *get_connection(struct tb_pool *pool)
 {
-    struct tconnection *result = pool->free;
+    struct tb_connection *result = pool->free;
     if (pool->free)
     {
         pool->free = pool->free->next;

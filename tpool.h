@@ -10,38 +10,42 @@
 #define TB_READ_TO 1 /* read timeout */
 #define TB_WRITE_TO 2 /* write timeout */
 
-struct pool_server
+struct tb_server
 {
     char *sname;
     uint16_t port;
-    struct pool_server *next;
+    struct tb_server *next;
     struct addrinfo *res0, *res;
     struct timeval *c_to, *w_to, check_after;
 };
 
-struct tconnection
+struct tb_connection
 {
     int sock;
     int stat;
-    struct pool_server *parent;
-    struct tconnection *next;
+    struct tb_server *parent;
+    struct tb_connection *next;
     struct timeval c_to, w_to;
 };
-void free_connection(struct tconnection *conn);
+void free_connection(struct tb_connection *conn);
 
-struct tpool
+struct tb_pool
 {
-    struct pool_server *servers;
-    struct pool_server *use_next;
-    struct tconnection *free;
-    struct tconnection *last;
+    struct tb_server *servers;
+    struct tb_server *use_next;
+    struct tb_connection *free;
+    struct tb_connection *last;
 };
 
+/**
+ * The routine should be called if connection is dead or fails.
+ */
+void dead_connection(struct tb_pool *pool, struct tb_connection *conn);
 /** pool
  * 
  * get_connection -> work with connection -> add_connection
  */
-struct tpool *make_pool();
+struct tb_pool *make_pool();
 /**
  *  Adds server to pool. 
  *
@@ -52,13 +56,13 @@ struct tpool *make_pool();
  *  WARNING! The routine can block.
  *  WARNING! The routine make a callback if server is unaviable.
  */
-struct pool_server *add_server(struct tpool *pool, const char *name, uint16_t port);
+struct tb_server *add_server(struct tb_pool *pool, const char *name, uint16_t port);
 
-void server_timeout(struct pool_server *server, int which, long msec);
+void server_timeout(struct tb_server *server, int which, long msec);
 /**
  * Add connection to the pool
  */
-int add_connection(struct tpool *pool, struct tconnection *server);
+int add_connection(struct tb_pool *pool, struct tb_connection *server);
 /**
  * Get connection from the pool.
  *
@@ -68,5 +72,5 @@ int add_connection(struct tpool *pool, struct tconnection *server);
  *
  * If connection created you should check async for connection to complete.
  */
-struct tconnection *get_connection(struct tpool *pool);
+struct tb_connection *get_connection(struct tb_pool *pool);
 #endif
