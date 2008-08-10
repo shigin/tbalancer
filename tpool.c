@@ -12,22 +12,70 @@
 #include "tpool.h"
 #include "common.h"
 
+struct connect_tuple
+{
+    struct tb_server *server;
+    struct tb_connection *connection;
+    struct tb_pool *pool;
+    struct event *ev;
+};
+
+void check_server(int _, short event, void *arg);
+void async_connection(int fd, short event, void *arg);
+void shedule_check(struct tb_pool *pool, struct tb_server *server);
+
 struct tb_pool *make_pool(void)
 {
     struct tb_pool *result = tb_alloc(struct tb_pool);
-    bzero(result, sizeof(struct tb_pool));
+    bzero(result, sizeof(*result));
     return result;
 }
 
 void free_connection(struct tb_connection *conn)
 {
     close(conn->sock);
+    conn->parent->total -= 1;
     free(conn);
 }
 
 void dead_connection(struct tb_pool *pool, struct tb_connection *conn)
 {
+    struct tb_server *server = conn->parent;
+    if (conn->parent->stat == TB_SERVER_UNKNOWN)
+    {
+        struct tb_connection *connection;
+        tb_debug("-> dead_connection: %s:%d dead, schedule check", 
+            server->sname, server->port);
+        for (connection = conn->parent->connection; connection; 
+                connection = connection->next)
+        {
+            free_connection(conn);
+        }
+        conn->parent->stat = TB_SERVER_DEAD;
+        shedule_check(pool, server);
+    }
+    conn->parent->stat = TB_SERVER_UNKNOWN;
+    tb_debug("-> dead_connection: %s:%d unknown status", 
+        server->sname, server->port);
     free_connection(conn);
+}
+
+void server_to_pool(struct tb_pool *pool, struct tb_server *server)
+{
+    tb_debug("-> server_to_pool: %s", server->sname);
+    if (pool->use_next)
+    {
+        server->next = pool->use_next;
+        server->prev = pool->use_next->prev;
+        if (server->prev)
+            server->prev->next = server;
+        pool->use_next->prev = server;
+        pool->use_next = server;
+    } else {
+        pool->use_next = server;
+        pool->servers = server;
+    }
+    tb_debug("<- server_to_pool: %s", server->sname);
 }
 
 struct tb_connection *make_connection(struct tb_server *server, int nonblock)
@@ -93,15 +141,6 @@ void server_timeout(struct tb_server *server, int which, long msec)
     change->tv_usec = msec%1000;
 }
 
-struct connect_tuple
-{
-    struct tb_server *server;
-    struct tb_connection *connection;
-    struct tb_pool *pool;
-    struct event *ev;
-};
-
-void check_server(int _, short event, void *arg);
 void async_connection(int fd, short event, void *arg)
 {
     struct connect_tuple *tuple = (struct connect_tuple *)arg;
@@ -111,8 +150,12 @@ void async_connection(int fd, short event, void *arg)
     if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &ret, &rlen) != -1)
     {
         if (ret == 0) {
+            tuple->connection->parent->stat = TB_SERVER_OK;
             tuple->connection->stat = CONN_CONNECTED;
             add_connection(tuple->pool, tuple->connection);
+            server_to_pool(tuple->pool, tuple->server);
+            free(tuple->ev);
+            free(tuple);
             tb_debug("<- async_connection ok [%d]", fd);
             return;
         }
@@ -130,8 +173,8 @@ void check_server(int _, short event, void *arg)
 {
     struct connect_tuple *tuple = (struct connect_tuple *)arg;
     struct addrinfo *res=NULL;
-    tb_debug("-> check_server %s after %ld sec", tuple->server->sname, 
-            tuple->server->check_after.tv_sec);
+    tb_debug("-> check_server %s:%d after %ld sec", tuple->server->sname, 
+            tuple->server->port, tuple->server->check_after.tv_sec);
     
     for (res = tuple->server->res0; res; res = res->ai_next)
     {
@@ -143,6 +186,9 @@ void check_server(int _, short event, void *arg)
             {
                 tb_debug("<- check_server %s: connected", tuple->server->sname);
                 add_connection(tuple->pool, tuple->connection);
+                server_to_pool(tuple->pool, tuple->server);
+                free(tuple->ev);
+                free(tuple);
                 return;
             }
             tb_debug("<- check_server %s: async_connect", tuple->server->sname);
@@ -153,7 +199,8 @@ void check_server(int _, short event, void *arg)
         }
         free(tuple->connection);
     }
-    tb_debug("<- check_server %s: sheduled", tuple->server->sname);
+    tb_debug("<- check_server %s:%d sheduled", 
+        tuple->server->sname, tuple->server->sname);
     evtimer_set(tuple->ev, check_server, tuple);
     event_add(tuple->ev, &tuple->server->check_after);
 }
@@ -172,11 +219,11 @@ struct tb_server *add_server(struct tb_pool *pool, const char *name, uint16_t po
     sprintf(sport, "%d", port);
 
     server = tb_alloc(struct tb_server);
-    bzero(server, sizeof(server));
+    bzero(server, sizeof(*server));
     server->sname = strdup(name);
+    server->port = port;
     server->check_after.tv_sec = 2;
-    server->c_to = NULL;
-    server->w_to = NULL;
+
     error = getaddrinfo(name, sport, &hints, &server->res0);
     for (res = server->res0; res; res = res->ai_next)
     {
@@ -191,50 +238,56 @@ struct tb_server *add_server(struct tb_pool *pool, const char *name, uint16_t po
     }
     if (connection == 0)
     {
-        struct connect_tuple *arg = tb_alloc(struct connect_tuple);
-        arg->server = server;
-        arg->connection = NULL;
-        arg->pool = pool;
-        arg->ev = tb_alloc(struct event);
-        tb_debug("make a callback for server %s", server->sname);
-        evtimer_set(arg->ev, check_server, arg);
-        event_add(arg->ev, &server->check_after);
-        return server;
-    }
-    server->res = res;
-    if (server->next)
-    {
-        server->next = pool->use_next->next;
-        pool->use_next->next = server;
+        shedule_check(pool, server);
     } else {
-        pool->use_next = server;
-        pool->servers = server;
+        server_to_pool(pool, server);
     }
     return server;
 }
 
-int add_connection(struct tb_pool *pool, struct tb_connection *server)
+void shedule_check(struct tb_pool *pool, struct tb_server *server)
 {
-    if (pool->last)
-        pool->last->next = server;
-    else
-        pool->free = server;
-    server->next = NULL;
-    pool->last = server;
-    return -1;
+    struct connect_tuple *arg = tb_alloc(struct connect_tuple);
+    tb_debug("-> shedule_check: server %s:%d",
+        server->sname, server->port);
+    arg->server = server;
+    arg->connection = NULL;
+    arg->pool = pool;
+    arg->ev = tb_alloc(struct event);
+    evtimer_set(arg->ev, check_server, arg);
+    event_add(arg->ev, &server->check_after);
+    tb_debug("<- shedule_check: server %s:%d",
+        server->sname, server->port);
+}
+
+int add_connection(struct tb_pool *pool, struct tb_connection *connection)
+{
+    connection->parent->free += 1;
+    connection->next = connection->parent->connection;
+    connection->parent->connection = connection;
+    return 0;
 }
 
 struct tb_connection *get_connection(struct tb_pool *pool)
 {
-    struct tb_connection *result = pool->free;
-    if (pool->free)
+    struct tb_connection *result;
+    if (pool->use_next == NULL)
     {
-        pool->free = pool->free->next;
-    } else {
-        tb_debug("new connection");
-        if (pool->use_next == 0)
-            pool->use_next = pool->servers;
-        return make_connection(pool->use_next, 1);
+        tb_debug("   get_connection: no servers");
+        return NULL;
     }
+    if (pool->use_next->connection)
+    {
+        tb_debug("-> get_connection: get exist");
+        result = pool->use_next->connection;
+        pool->use_next->connection = result->next;
+        result->next = NULL;
+        pool->use_next = pool->use_next->next;
+    } else {
+        tb_debug("-> get_connection: new connection");
+        result = make_connection(pool->use_next, 1);
+    }
+    if (pool->use_next == 0)
+        pool->use_next = pool->servers;
     return result;
 }

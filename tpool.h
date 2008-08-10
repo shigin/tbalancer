@@ -10,11 +10,19 @@
 #define TB_READ_TO 1 /* read timeout */
 #define TB_WRITE_TO 2 /* write timeout */
 
+#define TB_SERVER_OK 0
+#define TB_SERVER_UNKNOWN 1
+#define TB_SERVER_DEAD 2
+
+struct tb_connection;
 struct tb_server
 {
     char *sname;
+    uint8_t stat;
     uint16_t port;
-    struct tb_server *next;
+    unsigned int free, total;
+    struct tb_server *next, *prev;
+    struct tb_connection *connection;
     struct addrinfo *res0, *res;
     struct timeval *c_to, *w_to, check_after;
 };
@@ -27,14 +35,13 @@ struct tb_connection
     struct tb_connection *next;
     struct timeval c_to, w_to;
 };
+
 void free_connection(struct tb_connection *conn);
 
 struct tb_pool
 {
     struct tb_server *servers;
     struct tb_server *use_next;
-    struct tb_connection *free;
-    struct tb_connection *last;
 };
 
 /**
@@ -71,6 +78,29 @@ int add_connection(struct tb_pool *pool, struct tb_connection *server);
  *   - created.
  *
  * If connection created you should check async for connection to complete.
+ *
+ * Pool strategy (n - servers, m - connections, nserver):
+ *   - get a connection from a use_next server, move nserver; O(1)
+ *   XXX TODO:
+ *   - if server hasn't got free connection search for a server with free 
+ *   connections, but not the previos server, i.e. if we've got two servers
+ *   we should balance them, place the server before nserver; O(n);
+ *   - if no one server has free connections, make a new connection 
+ *   to first server, move nserver. O(n)
+ *
+ * Examples:
+ *   -> s1 (c1) s2 (c2) s3 (c3) get_connection -> c1
+ *   s1 () -> s2 (c2) s3 (c3)   get_connection -> c2
+ *   s1 () s2 () -> s3 (c3)     get_connection -> c3
+ *   -> s1 () s2 () s3 ()       add_connection (c2)
+ *   -> s1 () s2 (c2) s3 ()     get_connection -> c2
+ *   s2 () -> s1 () s3 ()       get_connection -> s1 -=> c4
+ *   s2 () s1 () -> s3 ()       add_connection (c1)
+ *   s2 () s1 (c1) -> s3 ()     get_connection -> s3 -=> c5
+ *   -> s2 () s1 (c1) s3 ()     get_connection -> c1
+ *   s1 () -> s2 () s3 ()       get_connection -> s2 -=> c6
+ *   s1 () s2 () -> s3 ()       add_connection (c3)
+ *   s1 () s2 () -> s3 (c3)
  */
 struct tb_connection *get_connection(struct tb_pool *pool);
 #endif

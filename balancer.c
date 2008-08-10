@@ -42,6 +42,7 @@ struct thrift_client *thrift_client_ctor(struct tb_pool *pool, const int origin)
 
 void thrift_client_dtor(struct thrift_client *instance)
 {
+    close(instance->origin);
     free(instance->buffer);
     event_del(instance->ev);
     free(instance->ev);
@@ -94,8 +95,13 @@ void pool_connect(int fd, short event, void *arg)
     dead_connection(tclient->pool, tclient->connection);
     /* get rid of a copy-paste */
     tclient->connection = get_connection(tclient->pool);
-    ret = tclient->connection->stat;
-    if (ret == CONN_CONNECTED)
+    if (tclient->connection == NULL)
+    {
+        thrift_client_dtor(tclient);
+        tb_debug("<- pool_connect: close client");
+        return;
+    }
+    if (tclient->connection->stat == CONN_CONNECTED)
     {
         event_set(tclient->ev, fd, EV_WRITE, write_data, tclient);
     } else {
@@ -128,6 +134,12 @@ void read_data(int fd, short event, void *arg)
                         EV_WRITE, write_data, tclient);
             } else {
                 tclient->connection = get_connection(tclient->pool);
+                if (tclient->connection == NULL)
+                {
+                    tb_debug("   read_data: no free servers");
+                    thrift_client_dtor(tclient);
+                    return;
+                }
                 tb_debug("switch to pooled %d [stat %d]", 
                     tclient->connection->sock, tclient->connection->stat);
                 if (tclient->connection->stat == CONN_CONNECTED)
@@ -247,6 +259,10 @@ int main()
     event_init();
     epair.pool = make_pool();
     server = add_server(epair.pool, "localhost", 9091);
+    assert(server);
+    server_timeout(server, TB_CONN_TO, 3);
+    server_timeout(server, TB_WRITE_TO, 3);
+    server = add_server(epair.pool, "localhost", 9092);
     assert(server);
     server_timeout(server, TB_CONN_TO, 3);
     server_timeout(server, TB_WRITE_TO, 3);
