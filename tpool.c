@@ -41,23 +41,39 @@ void free_connection(struct tb_connection *conn)
 void dead_connection(struct tb_pool *pool, struct tb_connection *conn)
 {
     struct tb_server *server = conn->parent;
-    if (conn->parent->stat == TB_SERVER_UNKNOWN)
+    if (server->stat != TB_SERVER_OK)
     {
         struct tb_connection *connection;
         tb_debug("-> dead_connection: %s:%d dead, schedule check", 
             server->sname, server->port);
-        for (connection = conn->parent->connection; connection; 
+        for (connection = server->connection; connection; 
                 connection = connection->next)
         {
             free_connection(conn);
         }
-        conn->parent->stat = TB_SERVER_DEAD;
+        server->stat = TB_SERVER_DEAD;
         shedule_check(pool, server);
+        /* remove the server from aviable list */
+        if (server->prev)
+            server->prev->next = server->next;
+        if (server->next)
+            server->next->prev = server->prev;
+        if (pool->servers == server)
+            pool->servers = server->next;
+        if (pool->use_next == server)
+        {
+            pool->use_next = server->next;
+            if (pool->use_next == NULL)
+                pool->use_next = pool->servers;
+        }
+    } else {
+        server->stat = TB_SERVER_UNKNOWN;
+        tb_debug("-> dead_connection: %s:%d unknown status", 
+            server->sname, server->port);
+        free_connection(conn);
     }
-    conn->parent->stat = TB_SERVER_UNKNOWN;
-    tb_debug("-> dead_connection: %s:%d unknown status", 
-        server->sname, server->port);
-    free_connection(conn);
+    tb_debug("<- dead_connection: %s:%d status == %d", 
+        server->sname, server->port, server->stat);
 }
 
 void server_to_pool(struct tb_pool *pool, struct tb_server *server)
@@ -289,14 +305,10 @@ struct tb_connection *get_connection(struct tb_pool *pool)
         tb_debug("-> get_connection: new connection");
         result = make_connection(pool->use_next, 1);
     }
-    tb_debug("   rotate servers %s:%d",
-            pool->use_next->sname, pool->use_next->port);
     pool->use_next = pool->use_next->next;
     if (pool->use_next == 0)
     {
         pool->use_next = pool->servers;
     }
-    tb_debug("   rotate servers %s:%d",
-            pool->use_next->sname, pool->use_next->port);
     return result;
 }

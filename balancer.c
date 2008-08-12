@@ -98,7 +98,7 @@ void pool_connect(int fd, short event, void *arg)
     if (tclient->connection == NULL)
     {
         thrift_client_dtor(tclient);
-        tb_debug("<- pool_connect: close client");
+        tb_debug("<- pool_connect: can't get new connection from pool");
         return;
     }
     if (tclient->connection->stat == CONN_CONNECTED)
@@ -117,17 +117,17 @@ void read_data(int fd, short event, void *arg)
     struct timeval *to = NULL;
     ssize_t got = read(fd, tclient->buffer + tclient->transmited, 
                            tclient->buf_size - tclient->transmited);
-    tb_debug("read_data [%d]", fd);
+    tb_debug("-> read_data [%d]", fd);
     if (got > 0)
     {
         tclient->transmited += got;
         if (tclient->transmited == tclient->expect)
         {
-            tb_debug("data ok");
+            tb_debug("   data ok");
             tclient->transmited = 0;
             if (tclient->connection)
             {
-                tb_debug("switch to origin");
+                tb_debug("   switch to origin");
                 add_connection(tclient->pool, tclient->connection);
                 tclient->connection = NULL;
                 event_set(tclient->ev, tclient->origin, 
@@ -136,11 +136,11 @@ void read_data(int fd, short event, void *arg)
                 tclient->connection = get_connection(tclient->pool);
                 if (tclient->connection == NULL)
                 {
-                    tb_debug("   read_data: no free servers");
+                    tb_debug("-> read_data: no free servers, delete client");
                     thrift_client_dtor(tclient);
                     return;
                 }
-                tb_debug("switch to pooled %d [stat %d]", 
+                tb_debug("   switch to pooled %d [stat %d]", 
                     tclient->connection->sock, tclient->connection->stat);
                 if (tclient->connection->stat == CONN_CONNECTED)
                 {
@@ -148,7 +148,7 @@ void read_data(int fd, short event, void *arg)
                             EV_WRITE, write_data, tclient);
                     to = &tclient->connection->w_to;
                 } else {
-                    tb_debug("wait to connect for %d", tclient->connection->sock);
+                    tb_debug("   wait to connect for %d", tclient->connection->sock);
                     event_set(tclient->ev, tclient->connection->sock, 
                             EV_WRITE, pool_connect, tclient);
                     to = &tclient->connection->w_to;
@@ -163,6 +163,7 @@ void read_data(int fd, short event, void *arg)
         perror("read_data");
         thrift_client_dtor(tclient);
     }
+    tb_debug("<- read_data [%d]", fd);
 }
 
 void read_len(int fd, short event, void *arg)
@@ -192,9 +193,8 @@ void read_len(int fd, short event, void *arg)
         if (got != 0) {
             perror("read_len");
         } else {
-            tb_debug("close connection %d", fd);
+            tb_debug("   close connection %d", fd);
         }
-        close(fd);
         thrift_client_dtor(tclient);
     }
     tb_debug("<- read_len [%d]", fd);
@@ -213,17 +213,18 @@ void accept_client(int fd, short event, void *arg)
     socklen_t len = sizeof(addr);
     /* reshedule me */
     event_add(&pair->ev, NULL);
-    tb_debug("accept [%d]", fd);
+    tb_debug("-> accept [%d]", fd);
     client = accept(fd, &addr, &len);
     if (client != -1)
     {
         struct thrift_client *tclient = thrift_client_ctor(pair->pool, client);
-        tb_debug("new client %d", client);
+        tb_debug("   new client %d", client);
         event_set(tclient->ev, client, EV_READ, read_len, tclient);
         event_add(tclient->ev, NULL);
     } else {
         perror("accept");
     }
+    tb_debug("<- accept [%d]", fd);
 }
 
 int main()
