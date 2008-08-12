@@ -62,7 +62,7 @@ void dead_connection(struct tb_pool *pool, struct tb_connection *conn)
 
 void server_to_pool(struct tb_pool *pool, struct tb_server *server)
 {
-    tb_debug("-> server_to_pool: %s", server->sname);
+    tb_debug("-> server_to_pool: %s:%d", server->sname, server->port);
     if (pool->use_next)
     {
         server->next = pool->use_next;
@@ -70,12 +70,15 @@ void server_to_pool(struct tb_pool *pool, struct tb_server *server)
         if (server->prev)
             server->prev->next = server;
         pool->use_next->prev = server;
+        /* if old use_next was first server adjust servers */
+        if (pool->use_next == pool->servers)
+            pool->servers = server;
         pool->use_next = server;
     } else {
         pool->use_next = server;
         pool->servers = server;
     }
-    tb_debug("<- server_to_pool: %s", server->sname);
+    tb_debug("<- server_to_pool: %s:%d", server->sname, server->port);
 }
 
 struct tb_connection *make_connection(struct tb_server *server, int nonblock)
@@ -282,12 +285,18 @@ struct tb_connection *get_connection(struct tb_pool *pool)
         result = pool->use_next->connection;
         pool->use_next->connection = result->next;
         result->next = NULL;
-        pool->use_next = pool->use_next->next;
     } else {
         tb_debug("-> get_connection: new connection");
         result = make_connection(pool->use_next, 1);
     }
+    tb_debug("   rotate servers %s:%d",
+            pool->use_next->sname, pool->use_next->port);
+    pool->use_next = pool->use_next->next;
     if (pool->use_next == 0)
+    {
         pool->use_next = pool->servers;
+    }
+    tb_debug("   rotate servers %s:%d",
+            pool->use_next->sname, pool->use_next->port);
     return result;
 }
