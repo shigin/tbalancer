@@ -51,27 +51,63 @@ void free_client(struct thrift_client *instance)
 }
 
 void read_len(int fd, short event, void *arg);
+void pool_connect(int fd, short event, void *arg);
+void schedule_connect(struct thrift_client *tclient);
+
 void write_data(int fd, short event, void *arg)
 {
     struct thrift_client *tclient = arg;
     ssize_t wrote = write(fd, tclient->buffer + tclient->transmited, 
                             tclient->buf_size - tclient->transmited);
-    tb_debug("-> write_data [%d]", fd);
-    if (wrote > 0 || errno == EAGAIN)
+    tb_debug("-> write_data [%d], %hd", fd, event);
+    if (wrote > 0)
     {
         tclient->transmited += wrote;
         if (tclient->transmited == tclient->expect)
-        {
             event_set(tclient->ev, fd, EV_READ, read_len, tclient);
-        } else
+        else
             event_set(tclient->ev, fd, EV_WRITE, write_data, tclient);
         event_add(tclient->ev, NULL);
     } else {
         /* XXX fill it */
+        tb_debug("!! wrote %d bytes, errno %d", wrote, errno);
         perror("write_data");
-        free_client(tclient);
+        if (tclient->connection != NULL)
+        {
+            dead_connection(tclient->pool, tclient->connection);
+            tclient->connection = get_connection(tclient->pool);
+            if (tclient->connection == NULL)
+            {
+                tb_debug("!! can't get another connect, drop client");
+                free_client(tclient);
+            } else {
+                tb_debug("ii get another connection from pool");
+                schedule_connect(tclient);
+            }
+        } else {
+            tb_debug("!! error write_data to client");
+            free_client(tclient);
+        }
     }
     tb_debug("<- write_data [%d]", fd);
+}
+
+void schedule_connect(struct thrift_client *tclient)
+{
+    struct timeval *to = NULL;
+    if (tclient->connection->stat == CONN_CONNECTED)
+    {
+        tb_debug(":: schedule_connect %d to write_data");
+        event_set(tclient->ev, tclient->connection->sock, 
+                EV_WRITE, write_data, tclient);
+        to = &tclient->connection->w_to;
+    } else {
+        tb_debug(":: schedule_connect %d to pool_data");
+        event_set(tclient->ev, tclient->connection->sock, 
+                EV_WRITE, pool_connect, tclient);
+        to = &tclient->connection->w_to;
+    }
+    event_add(tclient->ev, to);
 }
 
 void pool_connect(int fd, short event, void *arg)
@@ -102,22 +138,13 @@ void pool_connect(int fd, short event, void *arg)
         tb_debug("<- pool_connect: can't get new connection from pool");
         return;
     }
-    if (tclient->connection->stat == CONN_CONNECTED)
-    {
-        event_set(tclient->ev, tclient->connection->sock, 
-                EV_WRITE, write_data, tclient);
-    } else {
-        event_set(tclient->ev, tclient->connection->sock, 
-                EV_WRITE, pool_connect, tclient);
-    }
-    event_add(tclient->ev, NULL);
+    schedule_connect(tclient);
     tb_debug("<- pool_connect [%d]", fd);
 }
 
 void read_data(int fd, short event, void *arg)
 {
     struct thrift_client *tclient = arg;
-    struct timeval *to = NULL;
     ssize_t got = read(fd, tclient->buffer + tclient->transmited, 
                            tclient->buf_size - tclient->transmited);
     tb_debug("-> read_data [%d]", fd);
@@ -145,23 +172,14 @@ void read_data(int fd, short event, void *arg)
                 }
                 tb_debug("   switch to pooled %d [stat %d]", 
                     tclient->connection->sock, tclient->connection->stat);
-                if (tclient->connection->stat == CONN_CONNECTED)
-                {
-                    tb_debug("   shedule write_data");
-                    event_set(tclient->ev, tclient->connection->sock, 
-                            EV_WRITE, write_data, tclient);
-                    to = &tclient->connection->w_to;
-                } else {
-                    tb_debug("   wait to connect for %d", tclient->connection->sock);
-                    event_set(tclient->ev, tclient->connection->sock, 
-                            EV_WRITE, pool_connect, tclient);
-                    to = &tclient->connection->w_to;
-                }
+                schedule_connect(tclient);
+                tb_debug("<- read_data [%d]", fd);
+                return;
             }
         } else {
             event_set(tclient->ev, fd, EV_READ, read_data, tclient);
         }
-        event_add(tclient->ev, to);
+        event_add(tclient->ev, NULL);
     } else {
         /* XXX fill it */
         perror("read_data");
@@ -205,13 +223,7 @@ void read_len(int fd, short event, void *arg)
             tclient->connection = get_connection(tclient->pool);
             if (tclient->connection != NULL)
             {
-                if (tclient->connection->stat == CONN_CONNECTED)
-                    event_set(tclient->ev, tclient->connection->sock,
-                        EV_WRITE, read_len, tclient);
-                else
-                    event_set(tclient->ev, tclient->connection->sock,
-                        EV_WRITE, pool_connect, tclient);
-                event_add(tclient->ev, NULL);
+                schedule_connect(tclient);
                 return;
             }
         }
