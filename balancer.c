@@ -24,7 +24,7 @@ struct thrift_client {
     void *buffer;        /* buffer with data */
 };
 
-struct thrift_client *thrift_client_ctor(struct tb_pool *pool, const int origin)
+struct thrift_client *make_client(struct tb_pool *pool, const int origin)
 {
     struct thrift_client *result;
     int flags = fcntl(origin, F_GETFL, 0);
@@ -41,7 +41,7 @@ struct thrift_client *thrift_client_ctor(struct tb_pool *pool, const int origin)
     return result;
 }
 
-void thrift_client_dtor(struct thrift_client *instance)
+void free_client(struct thrift_client *instance)
 {
     close(instance->origin);
     free(instance->buffer);
@@ -69,7 +69,7 @@ void write_data(int fd, short event, void *arg)
     } else {
         /* XXX fill it */
         perror("write_data");
-        thrift_client_dtor(tclient);
+        free_client(tclient);
     }
     tb_debug("<- write_data [%d]", fd);
 }
@@ -98,7 +98,7 @@ void pool_connect(int fd, short event, void *arg)
     tclient->connection = get_connection(tclient->pool);
     if (tclient->connection == NULL)
     {
-        thrift_client_dtor(tclient);
+        free_client(tclient);
         tb_debug("<- pool_connect: can't get new connection from pool");
         return;
     }
@@ -140,7 +140,7 @@ void read_data(int fd, short event, void *arg)
                 if (tclient->connection == NULL)
                 {
                     tb_debug("-> read_data: no free servers, delete client");
-                    thrift_client_dtor(tclient);
+                    free_client(tclient);
                     return;
                 }
                 tb_debug("   switch to pooled %d [stat %d]", 
@@ -165,7 +165,7 @@ void read_data(int fd, short event, void *arg)
     } else {
         /* XXX fill it */
         perror("read_data");
-        thrift_client_dtor(tclient);
+        free_client(tclient);
     }
     tb_debug("<- read_data [%d]", fd);
 }
@@ -216,7 +216,7 @@ void read_len(int fd, short event, void *arg)
             }
         }
         tb_debug("!! close client");
-        thrift_client_dtor(tclient);
+        free_client(tclient);
     }
     tb_debug("<- read_len [%d]", fd);
 }
@@ -238,7 +238,7 @@ void accept_client(int fd, short event, void *arg)
     client = accept(fd, &addr, &len);
     if (client != -1)
     {
-        struct thrift_client *tclient = thrift_client_ctor(pair->pool, client);
+        struct thrift_client *tclient = make_client(pair->pool, client);
         tb_debug("   new client %d", client);
         event_set(tclient->ev, client, EV_READ, read_len, tclient);
         event_add(tclient->ev, NULL);
