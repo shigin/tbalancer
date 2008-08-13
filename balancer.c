@@ -9,6 +9,7 @@
 #include <string.h>
 #include <event.h>
 #include <assert.h>
+#include <errno.h>
 #include "tpool.h"
 #include "common.h"
 
@@ -56,7 +57,7 @@ void write_data(int fd, short event, void *arg)
     ssize_t wrote = write(fd, tclient->buffer + tclient->transmited, 
                             tclient->buf_size - tclient->transmited);
     tb_debug("-> write_data [%d]", fd);
-    if (wrote > 0)
+    if (wrote > 0 || errno == EAGAIN)
     {
         tclient->transmited += wrote;
         if (tclient->transmited == tclient->expect)
@@ -196,10 +197,25 @@ void read_len(int fd, short event, void *arg)
         if (got != 0) {
             perror("read_len");
         } else {
-            tb_debug("   close connection %d", fd);
+            tb_debug("!! pool connection %d closed", fd);
         }
         if (tclient->connection != NULL)
+        {
             dead_connection(tclient->pool, tclient->connection);
+            tclient->connection = get_connection(tclient->pool);
+            if (tclient->connection != NULL)
+            {
+                if (tclient->connection->stat == CONN_CONNECTED)
+                    event_set(tclient->ev, tclient->connection->sock,
+                        EV_WRITE, read_len, tclient);
+                else
+                    event_set(tclient->ev, tclient->connection->sock,
+                        EV_WRITE, pool_connect, tclient);
+                event_add(tclient->ev, NULL);
+                return;
+            }
+        }
+        tb_debug("!! close client");
         thrift_client_dtor(tclient);
     }
     tb_debug("<- read_len [%d]", fd);

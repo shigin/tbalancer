@@ -320,7 +320,7 @@ struct tb_connection *get_connection(struct tb_pool *pool)
     {
         pool->use_next = pool->servers;
     }
-    tb_debug("<- get_connection: get exist [%d]",
-        result->sock);
+    tb_debug("<- get_connection: %d -- %s:%d",
+        result->sock, result->parent->sname, result->parent->port);
     return result;
 }
