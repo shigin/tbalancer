@@ -31,6 +31,14 @@ struct tb_pool *make_pool(void)
     return result;
 }
 
+void pool_info(struct tb_pool *pool)
+{
+    struct tb_server *iter;
+    tb_debug("ii pool servers at %p (%p next)", pool->servers, pool->use_next);
+    for (iter=pool->servers; iter != NULL; iter = iter->next)
+        tb_debug("ii server %p is %s:%d", iter, iter->sname, iter->port);
+}
+
 void free_connection(struct tb_connection *conn)
 {
     close(conn->sock);
@@ -41,6 +49,7 @@ void free_connection(struct tb_connection *conn)
 void dead_connection(struct tb_pool *pool, struct tb_connection *conn)
 {
     struct tb_server *server = conn->parent;
+    pool_info(pool);
     if (server->stat != TB_SERVER_OK)
     {
         struct tb_connection *connection;
@@ -179,7 +188,7 @@ void async_connection(int fd, short event, void *arg)
             return;
         }
     } else {
-        perror("pool_connect");
+        perror("async_connection");
     }
     tb_debug("<- async_connection failed (%d)", ret);
     free_connection(tuple->connection);
@@ -290,9 +299,10 @@ int add_connection(struct tb_pool *pool, struct tb_connection *connection)
 struct tb_connection *get_connection(struct tb_pool *pool)
 {
     struct tb_connection *result;
+    pool_info(pool);
     if (pool->use_next == NULL)
     {
-        tb_debug("   get_connection: no servers");
+        tb_debug("!! get_connection: no servers");
         return NULL;
     }
     if (pool->use_next->connection)
@@ -310,5 +320,7 @@ struct tb_connection *get_connection(struct tb_pool *pool)
     {
         pool->use_next = pool->servers;
     }
+    tb_debug("<- get_connection: get exist [%d]",
+        result->sock);
     return result;
 }

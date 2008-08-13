@@ -103,9 +103,11 @@ void pool_connect(int fd, short event, void *arg)
     }
     if (tclient->connection->stat == CONN_CONNECTED)
     {
-        event_set(tclient->ev, fd, EV_WRITE, write_data, tclient);
+        event_set(tclient->ev, tclient->connection->sock, 
+                EV_WRITE, write_data, tclient);
     } else {
-        event_set(tclient->ev, fd, EV_WRITE, pool_connect, tclient);
+        event_set(tclient->ev, tclient->connection->sock, 
+                EV_WRITE, pool_connect, tclient);
     }
     event_add(tclient->ev, NULL);
     tb_debug("<- pool_connect [%d]", fd);
@@ -144,6 +146,7 @@ void read_data(int fd, short event, void *arg)
                     tclient->connection->sock, tclient->connection->stat);
                 if (tclient->connection->stat == CONN_CONNECTED)
                 {
+                    tb_debug("   shedule write_data");
                     event_set(tclient->ev, tclient->connection->sock, 
                             EV_WRITE, write_data, tclient);
                     to = &tclient->connection->w_to;
@@ -195,6 +198,8 @@ void read_len(int fd, short event, void *arg)
         } else {
             tb_debug("   close connection %d", fd);
         }
+        if (tclient->connection != NULL)
+            dead_connection(tclient->pool, tclient->connection);
         thrift_client_dtor(tclient);
     }
     tb_debug("<- read_len [%d]", fd);
