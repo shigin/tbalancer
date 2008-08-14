@@ -75,6 +75,9 @@ void dead_connection(struct tb_pool *pool, struct tb_connection *conn)
             if (pool->use_next == NULL)
                 pool->use_next = pool->servers;
         }
+        /* server hasn't prev and next server now */
+        server->next = NULL;
+        server->prev = NULL;
     } else {
         server->stat = TB_SERVER_UNKNOWN;
         tb_debug("-> dead_connection: %s:%d unknown status", 
