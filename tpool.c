@@ -34,9 +34,18 @@ struct tb_pool *make_pool(void)
 void pool_info(struct tb_pool *pool)
 {
     struct tb_server *iter;
+    int first_pass = 0;
     tb_debug("ii pool servers at %p (%p next)", pool->servers, pool->use_next);
-    for (iter=pool->servers; iter != NULL; iter = iter->next)
+    for (iter = pool->servers; iter; iter = iter->next)
+    {
+        if (first_pass == 1 && iter == pool->servers)
+        {
+            tb_debug("!! servers make endless loop");
+            return;
+        }
         tb_debug("ii server %p is %s:%d", iter, iter->sname, iter->port);
+        first_pass = 1;
+    }
 }
 
 void free_connection(struct tb_connection *conn)
@@ -211,7 +220,7 @@ void check_server(int _, short event, void *arg)
     {
         tuple->server->res = res;
         tuple->connection = make_connection(tuple->server, 1);
-        if (tuple->connection != 0)
+        if (tuple->connection)
         {
             if (tuple->connection->stat == CONN_CONNECTED)
             {
@@ -260,7 +269,7 @@ struct tb_server *add_server(struct tb_pool *pool, const char *name, uint16_t po
     {
         server->res = res;
         connection = make_connection(server, 0);
-        if (connection != 0)
+        if (connection)
         {
             add_connection(pool, connection);
             break;
