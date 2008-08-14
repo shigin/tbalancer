@@ -59,6 +59,13 @@ void dead_connection(struct tb_pool *pool, struct tb_connection *conn)
 {
     struct tb_server *server = conn->parent;
     pool_info(pool);
+    if (server->stat == TB_SERVER_DEAD)
+    {
+        /* it's okay, we already shedule check */
+        tb_debug("ii dead_connection %s:%d, already scheduled",
+            server->sname, server->port);
+        return;
+    }
     if (server->stat != TB_SERVER_OK)
     {
         struct tb_connection *connection;
