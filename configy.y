@@ -14,6 +14,7 @@ void yyerror(const char *message)
 extern struct tb_pool *opts_pool;
 extern short opts_port;
 extern FILE *yyin;
+static struct tb_server *__server;
 %}
 
 %token STRING
@@ -25,6 +26,9 @@ extern FILE *yyin;
 %token BACKENDS
 %token SEMICOLON
 %token LISTEN
+%token TIMEOUT
+%token MILISEC
+%token SEC
 
 %union {
     char *id;
@@ -67,14 +71,16 @@ serverlist: server serverlist |
 ;
 
 server: SERVER STRING PORT NUM SEMICOLON
-    {   tb_debug("add server %s port %d", $<id>2, $<num>4);
-        add_server(opts_pool, $<id>2, $<num>4); }
+    {
+        tb_debug("add server %s port %d", $<id>2, $<num>4);
+        add_server(opts_pool, $<id>2, $<num>4); 
+    }
+    | SERVER STRING PORT NUM TIMEOUT NUM MILISEC SEMICOLON
+    {
+        tb_debug("add server %s port %d, timeout %d msec", $<id>2, $<num>4, $<num>6);
+        __server = add_server(opts_pool, $<id>2, $<num>4); 
+        server_timeout(__server, TB_CONN_TO, $<num>6);
+        server_timeout(__server, TB_WRITE_TO, $<num>6);
+    }
 ;
 %%
-
-int xmain(int argc, char **argv)
-{
-    yyin = fopen(argv[1], "r");
-    event_init();
-    return yyparse();
-}

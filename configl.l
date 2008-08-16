@@ -15,6 +15,10 @@ hostname  ([A-Za-z0-9.-]+)
 "server"    { return SERVER; }
 "port"      { return PORT; }
 "listen"    { return LISTEN; }
+"timeout"   { return TIMEOUT; }
+"ms"        { return MILISEC; }
+"msec"      { return MILISEC; }
+"s"         { return SEC; }
 {unumber}   { yylval.num = atoi(yytext); return NUM; }
 {hostname}  { yylval.id = strdup(yytext); return STRING; }
 

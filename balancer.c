@@ -269,7 +269,6 @@ int main(int argc, char **argv)
 {
     struct sockaddr_in listen_on;
     struct event_pair epair;
-    struct tb_server* server;
     int ls = socket(PF_INET, SOCK_STREAM, 0);
     int one = 1;
     if (argc != 2)
@@ -283,17 +282,19 @@ int main(int argc, char **argv)
         return 1;
     }
     yyin = fopen(argv[1], "r");
+    event_init();
     if (yyparse() != 0)
     {
         fprintf(stderr, "can't parse config file %s\n", argv[1]);
         return 1;
     }
-    event_init();
+    fclose(yyin);
     if (opts_pool == NULL)
     {
         fprintf(stderr, "can't find any backends\n");
         return 1;
     }
+    epair.pool = opts_pool;
     listen_on.sin_port = htons(opts_port);
     if (inet_aton("0.0.0.0", &listen_on.sin_addr) == -1)
     {
