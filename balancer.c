@@ -260,19 +260,41 @@ void accept_client(int fd, short event, void *arg)
     tb_debug("<- accept [%d]", fd);
 }
 
-int main()
+struct tb_pool *opts_pool = NULL;
+short opts_port = 9090;
+extern FILE *yyin;
+extern int yyparse(void);
+
+int main(int argc, char **argv)
 {
     struct sockaddr_in listen_on;
     struct event_pair epair;
     struct tb_server* server;
     int ls = socket(PF_INET, SOCK_STREAM, 0);
     int one = 1;
+    if (argc != 2)
+    {
+        fprintf(stderr, "usage: %s <config-file>\n", argv[0]);
+        return 1;
+    }
     if (ls == -1)
     {
         perror("socket");
         return 1;
     }
-    listen_on.sin_port = htons(9090);
+    yyin = fopen(argv[1], "r");
+    if (yyparse() != 0)
+    {
+        fprintf(stderr, "can't parse config file %s\n", argv[1]);
+        return 1;
+    }
+    event_init();
+    if (opts_pool == NULL)
+    {
+        fprintf(stderr, "can't find any backends\n");
+        return 1;
+    }
+    listen_on.sin_port = htons(opts_port);
     if (inet_aton("0.0.0.0", &listen_on.sin_addr) == -1)
     {
         perror("bind");
@@ -287,19 +309,9 @@ int main()
 
     if (listen(ls, 4) == -1)
     {
-        perror("bind");
+        perror("listen");
         return 1;
     }
-    event_init();
-    epair.pool = make_pool();
-    server = add_server(epair.pool, "localhost", 9091);
-    assert(server);
-    server_timeout(server, TB_CONN_TO, 3);
-    server_timeout(server, TB_WRITE_TO, 3);
-    server = add_server(epair.pool, "localhost", 9092);
-    assert(server);
-    server_timeout(server, TB_CONN_TO, 3);
-    server_timeout(server, TB_WRITE_TO, 3);
     event_set(&epair.ev, ls, EV_READ, accept_client, &epair);
     event_add(&epair.ev, NULL);
     event_dispatch();
