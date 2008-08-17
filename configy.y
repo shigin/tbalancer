@@ -7,16 +7,15 @@
 #include "common.h"
 
 int yylex(void);
-void yyerror(const char *message)
-{
-    fprintf(stderr, "error reading config: %s\n", message);
-}
+void yyerror(const char *message);
+
 extern struct tb_pool *opts_pool;
 extern short opts_port;
 extern FILE *yyin;
 static struct tb_server *__server;
 %}
 
+%locations
 %token STRING
 %token NUM
 %token RBRACER
@@ -29,6 +28,7 @@ static struct tb_server *__server;
 %token TIMEOUT
 %token MILISEC
 %token SEC
+%token FLOAT
 
 %union {
     char *id;
@@ -84,3 +84,9 @@ server: SERVER STRING PORT NUM SEMICOLON
     }
 ;
 %%
+void yyerror(const char *message)
+{
+    fprintf(stderr, "error reading config: %s\n", message);
+    fprintf(stderr, "error at %d line near %d\n", 
+            yylloc.first_line, yylloc.first_column);
+}

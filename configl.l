@@ -4,7 +4,7 @@
 
 %option noyywrap
 unumber ([0-9]+)
-hostname  ([A-Za-z0-9.-]+)
+hostname ([A-Za-z0-9.-]+)
 
 %%
 
@@ -19,6 +19,7 @@ hostname  ([A-Za-z0-9.-]+)
 "ms"        { return MILISEC; }
 "msec"      { return MILISEC; }
 "s"         { return SEC; }
+"sec"       { return SEC; }
 {unumber}   { yylval.num = atoi(yytext); return NUM; }
 {hostname}  { yylval.id = strdup(yytext); return STRING; }
 
