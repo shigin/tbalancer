@@ -1,4 +1,7 @@
-all: balancer
+all: balancer hash_test
+
+hash_test: memcache.o
+	gcc -g -Wall -o $@ $^ -lssl
 
 #config_test: configl.o configy.o tpool.o
 #	gcc -g -Wall -o $@ $^ -levent
