@@ -1,4 +1,6 @@
 all: balancer hash_test
+CFLAGS=-I/usr/local/include
+LFLAGS=-L/usr/local/lib
 
 hash_test: memcache.o
 	gcc -g -Wall -o $@ $^ -lssl
@@ -7,13 +9,13 @@ hash_test: memcache.o
 #	gcc -g -Wall -o $@ $^ -levent
 
 balancer: balancer.o tpool.o configl.o configy.o
-	gcc -g -Wall -o $@ $^ -levent
+	gcc -g -Wall $(LFLAGS) -o $@ $^ -levent
 
 .c.o:
-	gcc -g -Wall -c $< 
+	gcc -g -Wall $(CFLAGS) -c $< 
 
 .l.c:
-	LANG=C flex -o $@ $<
+	LANG=C flex -o$@ $<
 
 .y.c:
 	bison -d -o $@ $<
