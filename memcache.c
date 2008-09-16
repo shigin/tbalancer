@@ -41,21 +41,62 @@ unsigned char* key_hash(const unsigned char *data, size_t n)
     return result;
 }
 
-int store_cache(const struct tb_bucket *bucket,
+int get_cache(struct tb_bucket *bucket,
+        unsigned char *request, size_t qlen);
+{
+    return 1;
+}
+
+int store_cache(struct tb_bucket *bucket,
         unsigned char *request, size_t qlen,
         const unsigned char *response, size_t rlen)
 {
-    uint32_t seq_id, mlen;
-    size_t at;
-    /* calculate seqid offset*/
-    memcpy(&mlen, request + 4, 4);
-    mlen = ntohl(mlen);
-    /* frame_size + name size + name */
-    at = 4 + 4 + mlen;
-    memcpy(&seq_id, request + at, 4);
-    memset(request + at, '\0', 4);
+    uint32_t seq_id;
+    size_t at, len, klen, wrote;
+    unsigned char key[41];
+    if (key_hash_data(request, qlen, key, 41) == -1)
+    {
+        /* me bad, i must to check it out */
+        bucket->transmited = bucket->buf_size;
+        return 0;
+    }
+    {
+        /**
+         * We must null seq-id before calculate key.
+         */
+        uint32_t mlen;
+        /* calculate seqid offset*/
+        memcpy(&mlen, request + 4, 4);
+        mlen = ntohl(mlen);
+        /* frame_size + name size + name */
+        at = 4 + 4 + mlen;
+        memcpy(&seq_id, request + at, 4);
+        memset(request + at, '\0', 4);
+    }
     /* store request and response */
+    /* command length is 4 (set) + 41 (key) + 2 (exptime) + 
+       2 (flags) + 11 (bytes) + \r\n + data + \0 
 
+       i can't imagine value which large than 4G, len(4**32) = 10
+
+       quote from memcached/doc/protocol.txt
+       <command name> <key> <flags> <exptime> <bytes> [noreply]\r\n
+    */
+    klen = 4 + 41 + 2 + 2 + 11 + 2;
+    len = klen + rlen;
+    if (len > bucket->buf_size)
+    {
+        free(bucket->buffer);
+        bucket->buffer = (unsigned char *)malloc(len);
+        bucket->buf_size = len;
+    }
+    wrote = snprintf((char *)bucket->buffer, klen, 
+        "set %s 0 0 %d\r\n", key, rlen);
+
+    /* XXX check if writev can help me */
+    memcpy(bucket->buffer + wrote + 1, response, rlen);
+    bucket->to_send = wrote + rlen;
+    bucket->transmited = 0;
     /* restore old seq-id */
     memcpy(request + at, &seq_id, 4);
     return 1;

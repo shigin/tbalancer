@@ -1,6 +1,8 @@
 #ifndef MEMCACHE_H__
 #define MEMCACHE_H__
 #include <stdlib.h>
+#include <event.h>
+
 /**
  * The routine returns hex representaion of a data.
  *
@@ -22,12 +24,24 @@ int key_hash_data(const unsigned char *data, size_t n,
 
 struct tb_bucket
 {
+    int sock;
+    struct event *ev;
+    unsigned char *buffer;
+    size_t buf_size, transmited, to_send;
 };
 
 /**
+ * Routine makes a query to buffer.
+ */
+int get_cache(struct tb_bucket *bucket,
+        unsigned char *request, size_t qlen);
+
+/**
+ * Routine makes a query to buffer.
+ *
  * Routine can store only framed strict binary protocol of thrift.
  */
-int store_cache(const struct tb_bucket *bucket,
+int store_cache(struct tb_bucket *bucket,
         unsigned char *request, size_t qlen,
         const unsigned char *response, size_t rlen);
 #endif
