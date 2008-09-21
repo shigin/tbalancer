@@ -1,47 +1,16 @@
 #ifndef MEMCACHE_H__
 #define MEMCACHE_H__
 #include <stdlib.h>
-#include <event.h>
 
-/**
- * The routine returns hex representaion of a data.
+/** Routine stores request and response to memcached.
  *
- * If the hex respresintation is longer than MAX_KEY_SIZE (try to reduce network usage)
- * routine returns SHA1 hash instead.
- *
- * Returns a pointer to new allocated data or NULL.
+ * The saving is performed by libevent, i.e. the key may not be stored
+ * on function return.
  */
-unsigned char* key_hash(const unsigned char *data, size_t n);
+void store(unsigned char *request, const size_t qlen,
+        const unsigned char *response, const size_t rlen);
 
-/**
- * Like key_hash, but store result to buffer. 
- *
- * Returns len of writen bytes.
- * Returns -1 if buf_size is not enough to store data.
- */
-int key_hash_data(const unsigned char *data, size_t n,
-        unsigned char *buffer, size_t buf_size);
+int get(unsigned char *request, const size_t qlen,
+        unsigned char *response, size_t rlen);
 
-struct tb_bucket
-{
-    int sock;
-    struct event *ev;
-    unsigned char *buffer;
-    size_t buf_size, transmited, to_send;
-};
-
-/**
- * Routine makes a query to buffer.
- */
-int get_cache(struct tb_bucket *bucket,
-        unsigned char *request, size_t qlen);
-
-/**
- * Routine makes a query to buffer.
- *
- * Routine can store only framed strict binary protocol of thrift.
- */
-int store_cache(struct tb_bucket *bucket,
-        unsigned char *request, size_t qlen,
-        const unsigned char *response, size_t rlen);
 #endif

@@ -3,7 +3,7 @@ CFLAGS=-I/usr/local/include
 LFLAGS=-L/usr/local/lib
 
 hash_test: memcache.o
-	gcc -g -Wall -o $@ $^ -lssl
+	gcc -g -Wall -o $@ $^ -lssl -levent
 
 #config_test: configl.o configy.o tpool.o
 #	gcc -g -Wall -o $@ $^ -levent
