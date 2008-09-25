@@ -97,12 +97,14 @@ void schedule_connect(struct thrift_client *tclient)
     struct timeval *to = NULL;
     if (tclient->connection->stat == CONN_CONNECTED)
     {
-        tb_debug(":: schedule_connect %d to write_data");
+        tb_debug(":: schedule_connect %d to write_data",
+                tclient->connection->sock);
         event_set(tclient->ev, tclient->connection->sock, 
                 EV_WRITE, write_data, tclient);
         to = &tclient->connection->w_to;
     } else {
-        tb_debug(":: schedule_connect %d to pool_data");
+        tb_debug(":: schedule_connect %d to pool_data",
+                tclient->connection->sock);
         event_set(tclient->ev, tclient->connection->sock, 
                 EV_WRITE, pool_connect, tclient);
         to = &tclient->connection->w_to;
