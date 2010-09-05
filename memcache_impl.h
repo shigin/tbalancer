@@ -13,6 +13,7 @@
 /* event--based store--get */
 /* connect -> get -> expect_key -> read_buffer */
 /* connect -> store -> expect_ok */
+void memcache_connect(int fd, short event, void *arg);
 void memcache_write_buffer(int fd, short event, void *arg);
 void memcache_read_buffer(int fd, short event, void *arg);
 void memcache_expect_key(int fd, short event, void *arg);

@@ -15,7 +15,7 @@ void store(unsigned char *request, const size_t qlen,
     struct tb_bucket *bucket = tb_alloc(struct tb_bucket);
     memset(bucket, 0, sizeof(struct tb_bucket));
     bucket->ev = tb_alloc(struct event);
-    store_cache(bucket, read, qlen, response, rlen);
+    store_cache(bucket, request, qlen, response, rlen);
     bucket->target = TB_TARGET_STORE;
     /* set up socket */
     event_set(bucket->ev, bucket->sock, 
@@ -302,7 +302,7 @@ int store_cache(struct tb_bucket *bucket,
         bucket->buf_size = len;
     }
     wrote = snprintf((char *)bucket->buffer, klen, 
-        "set %s 0 0 %d\r\n", key, rlen);
+        "set %s 0 0 %zu\r\n", key, rlen);
 
     /* XXX check if writev can help me */
     memcpy(bucket->buffer + wrote + 1, response, rlen);
