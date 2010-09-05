@@ -9,8 +9,7 @@
 
 #define tb_alloc(__s_t) (__s_t *)malloc(sizeof(__s_t))
 
-static void tb_debug(const char *message, ...)
-{
+static void tb_debug(const char *message, ...) {
     va_list ap;
     char xmessage[MAX_MSG];
     char t_s[40];

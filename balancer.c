@@ -24,8 +24,7 @@ struct thrift_client {
     void *buffer;        /* buffer with data */
 };
 
-struct thrift_client *make_client(struct tb_pool *pool, const int origin)
-{
+struct thrift_client *make_client(struct tb_pool *pool, const int origin) {
     struct thrift_client *result;
     int flags = fcntl(origin, F_GETFL, 0);
     fcntl(origin, F_SETFL, flags | O_NONBLOCK);
@@ -41,8 +40,7 @@ struct thrift_client *make_client(struct tb_pool *pool, const int origin)
     return result;
 }
 
-void free_client(struct thrift_client *instance)
-{
+void free_client(struct thrift_client *instance) {
     close(instance->origin);
     free(instance->buffer);
     event_del(instance->ev);
@@ -54,14 +52,12 @@ void read_len(int fd, short event, void *arg);
 void pool_connect(int fd, short event, void *arg);
 void schedule_connect(struct thrift_client *tclient);
 
-void write_data(int fd, short event, void *arg)
-{
+void write_data(int fd, short event, void *arg) {
     struct thrift_client *tclient = arg;
     ssize_t wrote = write(fd, tclient->buffer + tclient->transmited, 
                             tclient->buf_size - tclient->transmited);
     tb_debug("-> write_data [%d], %hd", fd, event);
-    if (wrote > 0)
-    {
+    if (wrote > 0) {
         tclient->transmited += wrote;
         if (tclient->transmited == tclient->expect)
             event_set(tclient->ev, fd, EV_READ, read_len, tclient);
@@ -72,12 +68,10 @@ void write_data(int fd, short event, void *arg)
         /* XXX fill it */
         tb_debug("!! wrote %d bytes, errno %d", wrote, errno);
         perror("write_data");
-        if (tclient->connection != NULL)
-        {
+        if (tclient->connection != NULL) {
             dead_connection(tclient->pool, tclient->connection);
             tclient->connection = get_connection(tclient->pool);
-            if (tclient->connection == NULL)
-            {
+            if (tclient->connection == NULL) {
                 tb_debug("!! can't get another connect, drop client");
                 free_client(tclient);
             } else {
@@ -92,11 +86,9 @@ void write_data(int fd, short event, void *arg)
     tb_debug("<- write_data [%d]", fd);
 }
 
-void schedule_connect(struct thrift_client *tclient)
-{
+void schedule_connect(struct thrift_client *tclient) {
     struct timeval *to = NULL;
-    if (tclient->connection->stat == CONN_CONNECTED)
-    {
+    if (tclient->connection->stat == CONN_CONNECTED) {
         tb_debug(":: schedule_connect %d to write_data");
         event_set(tclient->ev, tclient->connection->sock, 
                 EV_WRITE, write_data, tclient);
@@ -110,14 +102,12 @@ void schedule_connect(struct thrift_client *tclient)
     event_add(tclient->ev, to);
 }
 
-void pool_connect(int fd, short event, void *arg)
-{
+void pool_connect(int fd, short event, void *arg) {
     struct thrift_client *tclient = arg;
     int ret;
     socklen_t rlen = sizeof(ret);
     tb_debug("-> pool_connect [%d]", fd);
-    if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &ret, &rlen) != -1)
-    {
+    if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &ret, &rlen) != -1) {
         if (ret == 0) {
             tclient->connection->stat = CONN_CONNECTED;
             event_set(tclient->ev, fd, EV_WRITE, write_data, tclient);
@@ -132,8 +122,7 @@ void pool_connect(int fd, short event, void *arg)
     dead_connection(tclient->pool, tclient->connection);
     /* get rid of a copy-paste */
     tclient->connection = get_connection(tclient->pool);
-    if (tclient->connection == NULL)
-    {
+    if (tclient->connection == NULL) {
         free_client(tclient);
         tb_debug("<- pool_connect: can't get new connection from pool");
         return;
@@ -142,21 +131,17 @@ void pool_connect(int fd, short event, void *arg)
     tb_debug("<- pool_connect [%d]", fd);
 }
 
-void read_data(int fd, short event, void *arg)
-{
+void read_data(int fd, short event, void *arg) {
     struct thrift_client *tclient = arg;
     ssize_t got = read(fd, tclient->buffer + tclient->transmited, 
                            tclient->buf_size - tclient->transmited);
     tb_debug("-> read_data [%d]", fd);
-    if (got > 0)
-    {
+    if (got > 0) {
         tclient->transmited += got;
-        if (tclient->transmited == tclient->expect)
-        {
+        if (tclient->transmited == tclient->expect) {
             tb_debug("   data ok");
             tclient->transmited = 0;
-            if (tclient->connection)
-            {
+            if (tclient->connection) {
                 tb_debug("   switch to origin");
                 add_connection(tclient->pool, tclient->connection);
                 tclient->connection = NULL;
@@ -164,8 +149,7 @@ void read_data(int fd, short event, void *arg)
                         EV_WRITE, write_data, tclient);
             } else {
                 tclient->connection = get_connection(tclient->pool);
-                if (tclient->connection == NULL)
-                {
+                if (tclient->connection == NULL) {
                     tb_debug("-> read_data: no free servers, delete client");
                     free_client(tclient);
                     return;
@@ -188,18 +172,15 @@ void read_data(int fd, short event, void *arg)
     tb_debug("<- read_data [%d]", fd);
 }
 
-void read_len(int fd, short event, void *arg)
-{
+void read_len(int fd, short event, void *arg) {
     struct thrift_client *tclient = arg;
     ssize_t got;
     uint32_t len;
     tb_debug("-> read_len [%d]", fd);
     got = read(fd, &len, sizeof(len));
-    if (got == 4)
-    {
+    if (got == 4) {
         int buf_size = ntohl(len) + sizeof(len);
-        if (buf_size > tclient->buf_size)
-        {
+        if (buf_size > tclient->buf_size) {
             free(tclient->buffer);
             tclient->buf_size = buf_size;
             tclient->buffer = malloc(buf_size);
@@ -217,12 +198,10 @@ void read_len(int fd, short event, void *arg)
         } else {
             tb_debug("!! pool connection %d closed", fd);
         }
-        if (tclient->connection != NULL)
-        {
+        if (tclient->connection != NULL) {
             dead_connection(tclient->pool, tclient->connection);
             tclient->connection = get_connection(tclient->pool);
-            if (tclient->connection != NULL)
-            {
+            if (tclient->connection != NULL) {
                 schedule_connect(tclient);
                 return;
             }
@@ -238,8 +217,7 @@ struct event_pair {
     struct event ev;
 };
 
-void accept_client(int fd, short event, void *arg)
-{
+void accept_client(int fd, short event, void *arg) {
     struct event_pair *pair = (struct event_pair *)arg;
     int client;
     struct sockaddr addr;
@@ -248,8 +226,7 @@ void accept_client(int fd, short event, void *arg)
     event_add(&pair->ev, NULL);
     tb_debug("-> accept [%d]", fd);
     client = accept(fd, &addr, &len);
-    if (client != -1)
-    {
+    if (client != -1) {
         struct thrift_client *tclient = make_client(pair->pool, client);
         tb_debug("   new client %d", client);
         event_set(tclient->ev, client, EV_READ, read_len, tclient);
@@ -265,51 +242,43 @@ short opts_port = 9090;
 extern FILE *yyin;
 extern int yyparse(void);
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     struct sockaddr_in listen_on;
     struct event_pair epair;
     int ls = socket(PF_INET, SOCK_STREAM, 0);
     int one = 1;
-    if (argc != 2)
-    {
+    if (argc != 2) {
         fprintf(stderr, "usage: %s <config-file>\n", argv[0]);
         return 1;
     }
-    if (ls == -1)
-    {
+    if (ls == -1) {
         perror("socket");
         return 1;
     }
     yyin = fopen(argv[1], "r");
     event_init();
-    if (yyparse() != 0)
-    {
+    if (yyparse() != 0) {
         fprintf(stderr, "can't parse config file %s\n", argv[1]);
         return 1;
     }
     fclose(yyin);
-    if (opts_pool == NULL)
-    {
+    if (opts_pool == NULL) {
         fprintf(stderr, "can't find any backends\n");
         return 1;
     }
     epair.pool = opts_pool;
     listen_on.sin_port = htons(opts_port);
-    if (inet_aton("0.0.0.0", &listen_on.sin_addr) == -1)
-    {
+    if (inet_aton("0.0.0.0", &listen_on.sin_addr) == -1) {
         perror("bind");
         return 1;
     }
     setsockopt(ls, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
-    if (bind(ls, (struct sockaddr *)&listen_on, sizeof(listen_on)) == -1)
-    {
+    if (bind(ls, (struct sockaddr *)&listen_on, sizeof(listen_on)) == -1) {
         perror("bind");
         return 1;
     }
 
-    if (listen(ls, 4) == -1)
-    {
+    if (listen(ls, 4) == -1) {
         perror("listen");
         return 1;
     }

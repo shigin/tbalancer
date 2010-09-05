@@ -38,8 +38,7 @@ unsigned char* key_hash(const unsigned char *data, size_t n);
 int key_hash_data(const unsigned char *data, size_t n,
         unsigned char *buffer, size_t buf_size);
 
-struct tb_bucket
-{
+struct tb_bucket {
     int sock;
     int target;
     struct event *ev;

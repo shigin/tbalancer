@@ -10,8 +10,7 @@
 #include "common.h"
 
 void store(unsigned char *request, const size_t qlen,
-        const unsigned char *response, const size_t rlen)
-{
+        const unsigned char *response, const size_t rlen) {
     struct tb_bucket *bucket = tb_alloc(struct tb_bucket);
     memset(bucket, 0, sizeof(struct tb_bucket));
     bucket->ev = tb_alloc(struct event);
@@ -23,8 +22,7 @@ void store(unsigned char *request, const size_t qlen,
     event_add(bucket->ev, NULL);
 }
 
-void memcache_connect(int fd, short event, void *arg)
-{
+void memcache_connect(int fd, short event, void *arg) {
     struct tb_bucket *bucket = (struct tb_bucket *)arg;
     tb_debug("-> memcache_connect");
     event_set(bucket->ev, bucket->sock, EV_WRITE, 
@@ -33,32 +31,27 @@ void memcache_connect(int fd, short event, void *arg)
     tb_debug("<- memcache_connect");
 }
 
-void memcache_read_buffer(int fd, short event, void *arg)
-{
+void memcache_read_buffer(int fd, short event, void *arg) {
     ssize_t read;
     struct tb_bucket *bucket = (struct tb_bucket *)arg;
     tb_debug("-> memcache_read_key");
     read = recv(bucket->sock, bucket->buffer, bucket->buf_size, MSG_PEEK);
     bucket->transmited += read;
-    if (bucket->to_send == bucket->transmited)
-    {
+    if (bucket->to_send == bucket->transmited) {
         bucket->target = TB_TARGET_READY;
     }
     tb_debug("<- memcache_read_key");
 }
 
-void memcache_write_buffer(int fd, short event, void *arg)
-{
+void memcache_write_buffer(int fd, short event, void *arg) {
     size_t sent;
     struct tb_bucket *bucket = (struct tb_bucket *)arg;
     tb_debug("-> memcache_write_buffer");
     sent = send(bucket->sock, bucket->buffer + bucket->transmited, 
         bucket->to_send - bucket->transmited, 0);
     bucket->transmited += sent;
-    if (bucket->to_send == bucket->transmited)
-    {
-        if (bucket->target == TB_TARGET_GET)
-        {
+    if (bucket->to_send == bucket->transmited) {
+        if (bucket->target == TB_TARGET_GET) {
             event_set(bucket->ev, bucket->sock, EV_READ,
                     memcache_expect_key, bucket);
         } else {
@@ -81,22 +74,19 @@ void memcache_write_buffer(int fd, short event, void *arg)
     tb_debug("<- memcache_write_buffer");
 }
 
-void memcache_expect_key(int fd, short event, void *arg)
-{
+void memcache_expect_key(int fd, short event, void *arg) {
     /* XXX response string must contains in one tcp packet */
     ssize_t read;
     static char *end_indicator = "END\r\n";
     struct tb_bucket *bucket = (struct tb_bucket *)arg;
     tb_debug("-> memcache_expect_key");
     read = recv(bucket->sock, bucket->buffer, bucket->buf_size, MSG_PEEK);
-    if (read < 0)
-    {
+    if (read < 0) {
         /* XXX we need to indicate it */
         tb_debug("shit happens");
     } else {
         /* check if key exists */
-        if (read < 5)
-        {
+        if (read < 5) {
             /* XXX shit happens */
             bucket->target = TB_TARGET_ERROR;
             tb_debug("<- memcache_expect_key");
@@ -114,22 +104,17 @@ void memcache_expect_key(int fd, short event, void *arg)
             /* get bytes */
             /* VALUE <key> <flags> <bytes> [<cas unique>]\r\n
              * <data block>\r\n */
-            for (pos = 0; pos != read; ++pos)
-            {
-                if (bucket->buffer[pos] == '\n')
-                {
+            for (pos = 0; pos != read; ++pos) {
+                if (bucket->buffer[pos] == '\n') {
                     break;
                 }
-                if (bucket->buffer[pos] == ' ')
-                {
-                    if (spaces == 0)
-                    {
+                if (bucket->buffer[pos] == ' ') {
+                    if (spaces == 0) {
                         char *endptr;
                         /* XXX i hate the difference between char and 
                                unsigned char */
                         bytes = strtol((char *)bucket->buffer, &endptr, 10);
-                        if (*endptr == bucket->buffer[pos])
-                        {
+                        if (*endptr == bucket->buffer[pos]) {
                             tb_debug("!! can't parse bytes");
                             bucket->target = TB_TARGET_ERROR;
                             tb_debug("<- memcache_expect_key");
@@ -139,8 +124,7 @@ void memcache_expect_key(int fd, short event, void *arg)
                 }
             } /* end for */
             /* if bytes > 0 skip the header*/
-            if (bytes == -1)
-            {
+            if (bytes == -1) {
                 tb_debug("!! can't read byte count");
             }
             read = recv(bucket->sock, bucket->buffer, pos, 0);
@@ -156,8 +140,7 @@ void memcache_expect_key(int fd, short event, void *arg)
     tb_debug("<- memcache_expect_key");
 }
 
-void memcache_expect_result(int fd, short event, void *arg)
-{
+void memcache_expect_result(int fd, short event, void *arg) {
     ssize_t read;
     struct tb_bucket *bucket = (struct tb_bucket *)arg;
     tb_debug("-> memcache_expect_result");
@@ -171,11 +154,9 @@ void memcache_expect_result(int fd, short event, void *arg)
  *
  * WARNING! The routine never check if result len is enough.
  */
-static unsigned char *shex(const unsigned char *data, size_t n, unsigned char *result)
-{
+static unsigned char *shex(const unsigned char *data, size_t n, unsigned char *result) {
     size_t idx;
-    for (idx=0; idx < n; ++idx)
-    {
+    for (idx=0; idx < n; ++idx) {
         uint8_t digit = data[idx] / 16;
         result[idx*2] = digit < 10 ? digit + '0' : digit + 'a' - 10;
         digit = data[idx] & 0x0f;
@@ -185,11 +166,9 @@ static unsigned char *shex(const unsigned char *data, size_t n, unsigned char *r
     return result;
 }
 
-unsigned char* key_hash(const unsigned char *data, size_t n)
-{
+unsigned char* key_hash(const unsigned char *data, size_t n) {
     unsigned char *result;
-    if (2*n + 1 > MAX_KEY_SIZE)
-    {
+    if (2*n + 1 > MAX_KEY_SIZE) {
         result = (unsigned char *)malloc(41*sizeof(char));
         key_hash_data(data, n, result, 41);
         return result;
@@ -201,8 +180,7 @@ unsigned char* key_hash(const unsigned char *data, size_t n)
 }
 
 static void null_seq_id(unsigned char *request, size_t len, 
-    uint32_t *seq_id, size_t *at)
-{
+        uint32_t *seq_id, size_t *at) {
     /**
      * We must null seq-id before calculate key.
      */
@@ -219,15 +197,13 @@ static void null_seq_id(unsigned char *request, size_t len,
 }
  
 int get_cache(struct tb_bucket *bucket,
-        unsigned char *request, const size_t qlen)
-{
+        unsigned char *request, const size_t qlen) {
     uint32_t seq_id;
     size_t at, len, wrote;
     unsigned char key[41];
     /* XXX we same fragment of code in store_cache */
     null_seq_id(request, qlen, &seq_id, &at);
-    if (key_hash_data(request, qlen, key, 41) == -1)
-    {
+    if (key_hash_data(request, qlen, key, 41) == -1) {
         /* me bad, i must to check it out */
         bucket->transmited = bucket->buf_size;
         /* restore old seq-id */
@@ -239,12 +215,10 @@ int get_cache(struct tb_bucket *bucket,
      * 4 (get ) + 40 (key) + 3 (\r\n\0)
      */
     len = 4 + 40 + 3;
-    if (len > bucket->buf_size)
-    {
+    if (len > bucket->buf_size) {
         /* XXX copy-paste */
         bucket->buffer = realloc(bucket->buffer, len);
-        if (bucket->buffer == 0)
-        {
+        if (bucket->buffer == 0) {
             /* me bad, i must to check it out */
             bucket->transmited = bucket->buf_size;
             /* restore old seq-id */
@@ -262,14 +236,12 @@ int get_cache(struct tb_bucket *bucket,
 
 int store_cache(struct tb_bucket *bucket,
         unsigned char *request, const size_t qlen,
-        const unsigned char *response, const size_t rlen)
-{
+        const unsigned char *response, const size_t rlen) {
     uint32_t seq_id;
     size_t at, len, klen, wrote;
     unsigned char key[41];
     null_seq_id(request, len, &seq_id, &at);
-    if (key_hash_data(request, qlen, key, 41) == -1)
-    {
+    if (key_hash_data(request, qlen, key, 41) == -1) {
         /* me bad, i must to check it out */
         bucket->transmited = bucket->buf_size;
         /* restore old seq-id */
@@ -287,12 +259,10 @@ int store_cache(struct tb_bucket *bucket,
     */
     klen = 4 + 41 + 2 + 2 + 11 + 2;
     len = klen + rlen;
-    if (len > bucket->buf_size)
-    {
+    if (len > bucket->buf_size) {
         /* XXX copy-paste */
         bucket->buffer = realloc(bucket->buffer, len);
-        if (bucket->buffer == 0)
-        {
+        if (bucket->buffer == 0) {
             /* me bad, i must to check it out */
             bucket->transmited = bucket->buf_size;
             /* restore old seq-id */
@@ -314,10 +284,8 @@ int store_cache(struct tb_bucket *bucket,
 }
 
 int key_hash_data(const unsigned char *data, size_t n,
-        unsigned char *buffer, size_t buf_size)
-{
-    if (2*n + 1 > MAX_KEY_SIZE)
-    {
+        unsigned char *buffer, size_t buf_size) {
+    if (2*n + 1 > MAX_KEY_SIZE) {
         unsigned char tmp[20];
         assert (buf_size >= 41);
         SHA1(data, n, tmp);
@@ -332,8 +300,7 @@ int key_hash_data(const unsigned char *data, size_t n,
     return -1;
 }
 
-int main(void)
-{
+int main(void) {
     unsigned char x[44];
     printf("?123 is %s\n", shex((unsigned char *)"\xff 123a", 5, x));
     printf("123 is %s\n", key_hash((unsigned char *)"123a", 4));

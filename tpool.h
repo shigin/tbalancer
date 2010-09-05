@@ -15,8 +15,7 @@
 #define TB_SERVER_DEAD 2
 
 struct tb_connection;
-struct tb_server
-{
+struct tb_server {
     char *sname;
     uint8_t stat;
     uint16_t port;
@@ -27,8 +26,7 @@ struct tb_server
     struct timeval *c_to, *w_to, check_after;
 };
 
-struct tb_connection
-{
+struct tb_connection {
     int sock;
     int stat;
     struct tb_server *parent;
@@ -38,8 +36,7 @@ struct tb_connection
 
 void free_connection(struct tb_connection *conn);
 
-struct tb_pool
-{
+struct tb_pool {
     struct tb_server *servers;
     struct tb_server *use_next;
 };
