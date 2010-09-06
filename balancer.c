@@ -183,9 +183,17 @@ void read_len(int fd, short event, void *arg) {
     if (got == 4) {
         int buf_size = ntohl(len) + sizeof(len);
         if (buf_size > tclient->buf_size) {
+            void *buf = malloc(buf_size);
+            if (buf == NULL) {
+                tb_error("can't allocate %d bytes\n", buf_size);
+                tb_debug("!! close client");
+                free_client(tclient);
+                tb_debug("<- read_len [%d]", fd);
+                return;
+            }
             free(tclient->buffer);
             tclient->buf_size = buf_size;
-            tclient->buffer = malloc(buf_size);
+            tclient->buffer = buf;
         }
         memcpy(tclient->buffer, &len, sizeof(len));
         tclient->expect = buf_size;
