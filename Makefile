@@ -11,6 +11,7 @@ hash_test: memcache.o
 balancer: balancer.o tpool.o configl.o configy.o
 	gcc -g -Wall $(LFLAGS) -o $@ $^ -levent
 
+configl.o: configl.c
 .c.o:
 	gcc -g -Wall $(CFLAGS) -c $< 
 
