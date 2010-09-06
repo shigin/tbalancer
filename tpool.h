@@ -58,11 +58,15 @@ struct tb_pool *make_pool();
  *
  *  WARNING! The routine sends a DNS query.
  *  WARNING! The routine can block.
- *  WARNING! The routine make a callback if server is unaviable.
+ *  WARNING! The routine make a callback if server is unavailable.
  */
 struct tb_server *add_server(struct tb_pool *pool, const char *name, uint16_t port);
 
+/**
+ * Set timeouts for server.
+ */
 void server_timeout(struct tb_server *server, int which, long msec);
+
 /**
  * Add connection to the pool
  */
