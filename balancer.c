@@ -219,6 +219,23 @@ struct event_pair {
     struct event ev;
 };
 
+/* the maximum IPv6 address text representation is 39 bytes (???)
+   and one extra byte for zero*/
+#define TEXT_ADDR_LEN 40
+
+static int addr_dump(const struct sockaddr *addr, char *buf, unsigned len) {
+    switch (addr->sa_family) {
+      case AF_INET:
+        return inet_ntop(AF_INET, &((struct sockaddr_in *) addr)->sin_addr,
+                buf, len) != NULL;
+      case AF_INET6:
+        return inet_ntop(AF_INET6, &((struct sockaddr_in6 *)addr)->sin6_addr,
+                buf, len) != NULL;
+      default:
+        return 0;
+    }
+}
+
 void accept_client(int fd, short event, void *arg) {
     struct event_pair *pair = (struct event_pair *)arg;
     int client;
@@ -229,7 +246,12 @@ void accept_client(int fd, short event, void *arg) {
     tb_debug("-> accept [%d]", fd);
     client = accept(fd, &addr, &len);
     if (client != -1) {
+        char buffer[TEXT_ADDR_LEN];
         struct thrift_client *tclient = make_client(pair->pool, client);
+
+        if (addr_dump(&addr, buffer, TEXT_ADDR_LEN)) {
+            tb_info("get connection %s", buffer);
+        }
         tb_debug("   new client %d", client);
         event_set(tclient->ev, client, EV_READ, read_len, tclient);
         event_add(tclient->ev, NULL);
