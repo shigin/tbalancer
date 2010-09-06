@@ -1,19 +1,20 @@
 all: balancer hash_test
-CFLAGS=-I/usr/local/include
-LFLAGS=-L/usr/local/lib
+CFLAGS=-g -Wall -I/usr/local/include
+LDFLAGS=-L/usr/local/lib
 
+# pmake and gmake extend POSIX make in a different ways
+# pmake uses $> to store all source files
+# gmake uses $^ instead
 hash_test: memcache.o
-	gcc -g -Wall -o $@ $^ -lssl -levent
+	$(CC) $(LDFLAGS) -o $@ $^ $> -lssl -levent
 
 #config_test: configl.o configy.o tpool.o
-#	gcc -g -Wall -o $@ $^ -levent
+#	$(CC) -o $@ $^ -levent
 
 balancer: balancer.o tpool.o configl.o configy.o
-	gcc -g -Wall $(LFLAGS) -o $@ $^ -levent
+	$(CC) $(LDFLAGS) -o $@ $^ $> -levent
 
 configl.o: configl.c
-.c.o:
-	gcc -g -Wall $(CFLAGS) -c $< 
 
 .l.c:
 	LANG=C flex -o$@ $<
@@ -25,3 +26,8 @@ balancer.o: tpool.h common.h
 tpool.o: tpool.h common.h
 configy.h: configy.c
 configl.o: configy.h
+
+clean:
+	rm -f hash_test memcache.o balancer balancer.o tpool.o
+	rm -f configl.o configl.c
+	rm -f configy.o configy.h configy.c 
