@@ -5,31 +5,84 @@
 #include <string.h>
 #include <arpa/inet.h>
 #include <openssl/sha.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <errno.h>
 #include "memcache.h"
 #include "memcache_impl.h"
 #include "common.h"
+
+#define HOST "localhost"
+#define PORT 7070
+
+int get_bucket(const uint8_t key)
+{
+    struct addrinfo hints, *res=NULL, *res0=NULL;
+    char sport[sizeof("65536")];
+    int error;
+    bzero(&hints, sizeof(hints));
+    hints.ai_family = PF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE | AI_ADDRCONFIG;
+    sprintf(sport, "%d", PORT);
+    
+    error = getaddrinfo(HOST, sport, &hints, &res0);
+    return 0;
+}
 
 void store(unsigned char *request, const size_t qlen,
         const unsigned char *response, const size_t rlen)
 {
     struct tb_bucket *bucket = tb_alloc(struct tb_bucket);
+    int flags, ret; 
     memset(bucket, 0, sizeof(struct tb_bucket));
     bucket->ev = tb_alloc(struct event);
-    store_cache(bucket, read, qlen, response, rlen);
+    store_cache(bucket, request, qlen, response, rlen);
     bucket->target = TB_TARGET_STORE;
-    /* set up socket */
-    event_set(bucket->ev, bucket->sock, 
-        EV_WRITE, memcache_connect, bucket);
-    event_add(bucket->ev, NULL);
+    //bucket->sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    flags = fcntl(bucket->sock, F_GETFL, 0);
+    fcntl(bucket->sock, F_SETFL, flags | O_NONBLOCK);
+    //ret = connect(sock, res->ai_addr, res->ai_addrlen);
+    if (ret == -1)
+    {
+        if (errno == EINPROGRESS)
+        {
+            /* set up socket */
+            event_set(bucket->ev, bucket->sock, 
+                EV_WRITE, memcache_connect, bucket);
+            event_add(bucket->ev, NULL);
+        } else {
+            tb_error("!! can't connect to memcached");
+        }
+    } else {
+        event_set(bucket->ev, bucket->sock, EV_WRITE,
+            memcache_write_buffer, bucket);
+        event_add(bucket->ev, NULL);
+    }
 }
 
 void memcache_connect(int fd, short event, void *arg)
 {
     struct tb_bucket *bucket = (struct tb_bucket *)arg;
+    int ret;
+    socklen_t rlen = sizeof(ret);
     tb_debug("-> memcache_connect");
-    event_set(bucket->ev, bucket->sock, EV_WRITE, 
-        memcache_write_buffer, bucket);
-    event_add(bucket->ev, NULL);
+    if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &ret, &rlen) != -1)
+    {
+        if (ret == 0)
+        {
+            event_set(bucket->ev, bucket->sock, EV_WRITE,
+                memcache_write_buffer, bucket);
+            event_add(bucket->ev, NULL);
+            tb_debug("<- async_connection ok [%d]", fd);
+            return;
+        }
+    } else {
+        perror("async_connection");
+    }
+    //release_bucket(bucket);
     tb_debug("<- memcache_connect");
 }
 
@@ -234,6 +287,7 @@ int get_cache(struct tb_bucket *bucket,
         memcpy(request + at, &seq_id, 4);
         return 0;
     }
+    memcpy(request + at, &seq_id, 4);
 
     /* request string is get <key>*\r\n, so we need
      * 4 (get ) + 40 (key) + 3 (\r\n\0)
@@ -247,16 +301,12 @@ int get_cache(struct tb_bucket *bucket,
         {
             /* me bad, i must to check it out */
             bucket->transmited = bucket->buf_size;
-            /* restore old seq-id */
-            memcpy(request + at, &seq_id, 4);
             return 0;
         }
         bucket->buf_size = len;
     }
 
     wrote = snprintf((char *)bucket->buffer, len, "get %s\r\n", key);
-
-    memcpy(request + at, &seq_id, 4);
     return 1;
 }
 
@@ -276,6 +326,8 @@ int store_cache(struct tb_bucket *bucket,
         memcpy(request + at, &seq_id, 4);
         return 0;
     }
+    /* restore old seq-id */
+    memcpy(request + at, &seq_id, 4);
     /* store request and response */
     /* command length is 4 (set) + 41 (key) + 2 (exptime) + 
        2 (flags) + 11 (bytes) + \r\n + data + \0 
@@ -296,7 +348,6 @@ int store_cache(struct tb_bucket *bucket,
             /* me bad, i must to check it out */
             bucket->transmited = bucket->buf_size;
             /* restore old seq-id */
-            memcpy(request + at, &seq_id, 4);
             return 0;
         }
         bucket->buf_size = len;
@@ -308,8 +359,6 @@ int store_cache(struct tb_bucket *bucket,
     memcpy(bucket->buffer + wrote + 1, response, rlen);
     bucket->to_send = wrote + rlen;
     bucket->transmited = 0;
-    /* restore old seq-id */
-    memcpy(request + at, &seq_id, 4);
     return 1;
 }
 
@@ -321,7 +370,6 @@ int key_hash_data(const unsigned char *data, size_t n,
         unsigned char tmp[20];
         assert (buf_size >= 41);
         SHA1(data, n, tmp);
-        printf("first byte is %d\n", tmp[0]);
         shex(tmp, 20, buffer);
         return 41;
     } else {
