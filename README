@@ -1,0 +1,24 @@
+Simple Thrift balancer
+======================
+
+Configure file
+--------------
+
+Global parameters:
+    listen --- port to listen on
+
+Back-end pool:
+    backends { servers };
+
+Server:
+    server domain port 65537 [timeout 10000 ms];
+
+Example config
+--------------
+
+    listen 9090;
+
+    backends {
+        server thrift1.example.com port 9090;
+        server thrift2.example.com port 9090 timeout 300 ms;
+    };
