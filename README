@@ -5,13 +5,18 @@ Configure file
 --------------
 
 Global parameters:
-    listen --- port to listen on
+
+  * listen --- port to listen on
 
 Back-end pool:
-    backends { servers };
+
+  * backends { servers };
 
 Server:
+
     server domain port 65537 [timeout 10000 ms];
+
+Timeout specifies connect and write timeout.
 
 Example config
 --------------
