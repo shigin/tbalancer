@@ -13,6 +13,7 @@
 /* event--based store--get */
 /* connect -> get -> expect_key -> read_buffer */
 /* connect -> store -> expect_ok */
+void memcache_connect(int fd, short event, void *arg);
 void memcache_write_buffer(int fd, short event, void *arg);
 void memcache_read_buffer(int fd, short event, void *arg);
 void memcache_expect_key(int fd, short event, void *arg);
@@ -37,8 +38,7 @@ unsigned char* key_hash(const unsigned char *data, size_t n);
 int key_hash_data(const unsigned char *data, size_t n,
         unsigned char *buffer, size_t buf_size);
 
-struct tb_bucket
-{
+struct tb_bucket {
     int sock;
     int target;
     struct event *ev;
